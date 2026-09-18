@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Yu Gothic', 'Meiryo', sans-serif;
+  }
+}
+
+@layer utilities {
+  .report-page {
+    @apply bg-white shadow-lg mx-auto;
+    width: 210mm;
+    min-height: 297mm;
+    padding: 15mm 20mm;
+  }
+}
+
+@media print {
+  body {
+    background: white !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .report-page {
+    box-shadow: none !important;
+    margin: 0 !important;
+    page-break-after: always;
+  }
+}
