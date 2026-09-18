@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI, { toFile } from "openai";
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,7 +20,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check file size (limit to 2MB to stay well under limits)
     if (audioFile.size > 2 * 1024 * 1024) {
       return NextResponse.json(
         { error: "音声ファイルが大きすぎます。短めに録音してください。" },
@@ -29,25 +27,41 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const openai = new OpenAI({ apiKey });
-
-    // Use OpenAI SDK's toFile utility for reliable file handling in serverless
+    // Call OpenAI Whisper API directly with native fetch
+    // (avoids node-fetch ECONNRESET issues in Vercel serverless)
+    const openaiForm = new FormData();
     const arrayBuffer = await audioFile.arrayBuffer();
-    const file = await toFile(
-      new Uint8Array(arrayBuffer),
-      "recording.webm",
-      { type: "audio/webm" }
+    const blob = new Blob([arrayBuffer], { type: "audio/webm" });
+    openaiForm.append("file", blob, "recording.webm");
+    openaiForm.append("model", "whisper-1");
+    openaiForm.append("language", "ja");
+    openaiForm.append(
+      "prompt",
+      "建設現場の調査報告。板金、屋根、外壁、防水、コーキング、シーリング、ひび割れ、劣化、漏水、補修。"
     );
 
-    const transcription = await openai.audio.transcriptions.create({
-      file,
-      model: "whisper-1",
-      language: "ja",
-      prompt:
-        "建設現場の調査報告。板金、屋根、外壁、防水、コーキング、シーリング、ひび割れ、劣化、漏水、補修。",
-    });
+    const openaiRes = await fetch(
+      "https://api.openai.com/v1/audio/transcriptions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: openaiForm,
+      }
+    );
 
-    return NextResponse.json({ text: transcription.text });
+    if (!openaiRes.ok) {
+      const errBody = await openaiRes.text();
+      console.error("OpenAI API error:", openaiRes.status, errBody);
+      return NextResponse.json(
+        { error: `OpenAI APIエラー (${openaiRes.status})` },
+        { status: 500 }
+      );
+    }
+
+    const result = await openaiRes.json();
+    return NextResponse.json({ text: result.text });
   } catch (err) {
     console.error("Transcription error:", err);
     const message =
