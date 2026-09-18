@@ -58,6 +58,38 @@ export default function Home() {
     setActivePhotoId((current) => (current === id ? null : current));
   }, []);
 
+  // Resize and compress a photo using Canvas API
+  const compressPhoto = (file: File, maxDim = 1200, quality = 0.6): Promise<{ base64: string; mimeType: string }> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        // Scale down if larger than maxDim
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { reject(new Error("Canvas not supported")); return; }
+        ctx.drawImage(img, 0, 0, width, height);
+        // Always output as JPEG for smaller size
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        const base64 = dataUrl.split(",")[1];
+        resolve({ base64, mimeType: "image/jpeg" });
+      };
+      img.onerror = () => reject(new Error("画像の読み込みに失敗しました"));
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
   const handleGenerate = async () => {
     if (photos.length === 0) {
       alert("写真を1枚以上追加してください");
@@ -67,20 +99,14 @@ export default function Home() {
     setIsGenerating(true);
 
     try {
-      // Convert photos to base64 for API
+      // Convert photos to compressed base64 for API
       const photoData = await Promise.all(
         photos.map(async (photo) => {
-          const buffer = await photo.file.arrayBuffer();
-          const base64 = btoa(
-            new Uint8Array(buffer).reduce(
-              (data, byte) => data + String.fromCharCode(byte),
-              ""
-            )
-          );
+          const { base64, mimeType } = await compressPhoto(photo.file);
           return {
             id: photo.id,
             base64,
-            mimeType: photo.file.type,
+            mimeType,
             description: photo.description,
             location: photo.location,
             fileName: photo.file.name,
