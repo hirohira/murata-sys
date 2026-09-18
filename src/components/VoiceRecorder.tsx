@@ -7,6 +7,8 @@ interface Props {
   onChange: (text: string) => void;
 }
 
+const MAX_RECORDING_SECONDS = 60;
+
 export default function VoiceRecorder({ value, onChange }: Props) {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -15,13 +17,28 @@ export default function VoiceRecorder({ value, onChange }: Props) {
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const stopRecordingRef = useRef<() => void>();
+
   const startRecording = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+
+      // Try to use a lower bitrate codec to keep file size small
+      let mimeType = "audio/webm";
+      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+        mimeType = "audio/webm;codecs=opus";
+      }
+
       const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-          ? "audio/webm;codecs=opus"
-          : "audio/webm",
+        mimeType,
+        audioBitsPerSecond: 16000, // Low bitrate to reduce file size
       });
 
       chunksRef.current = [];
@@ -33,15 +50,22 @@ export default function VoiceRecorder({ value, onChange }: Props) {
 
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const blob = new Blob(chunksRef.current, { type: mimeType });
         await transcribeAudio(blob);
       };
 
       mediaRecorder.start(1000);
       setIsRecording(true);
       setRecordingTime(0);
+
+      // Auto-stop after MAX_RECORDING_SECONDS
+      let seconds = 0;
       timerRef.current = setInterval(() => {
-        setRecordingTime((t) => t + 1);
+        seconds += 1;
+        setRecordingTime(seconds);
+        if (seconds >= MAX_RECORDING_SECONDS) {
+          stopRecordingRef.current?.();
+        }
       }, 1000);
     } catch {
       alert("マイクへのアクセスが許可されていません");
@@ -59,9 +83,20 @@ export default function VoiceRecorder({ value, onChange }: Props) {
     }
   }, []);
 
+  // Keep ref in sync for auto-stop timer
+  stopRecordingRef.current = stopRecording;
+
   const transcribeAudio = async (blob: Blob) => {
     setIsTranscribing(true);
     try {
+      // Check file size before sending
+      const sizeMB = blob.size / (1024 * 1024);
+      if (sizeMB > 4) {
+        throw new Error(
+          `音声ファイルが大きすぎます（${sizeMB.toFixed(1)}MB）。短めに録音してください。`
+        );
+      }
+
       const formData = new FormData();
       formData.append("audio", blob, "recording.webm");
 
@@ -71,8 +106,14 @@ export default function VoiceRecorder({ value, onChange }: Props) {
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "文字起こしに失敗しました");
+        let errorMsg = "文字起こしに失敗しました";
+        try {
+          const err = await res.json();
+          errorMsg = err.error || errorMsg;
+        } catch {
+          // Response may not be JSON
+        }
+        throw new Error(errorMsg);
       }
 
       const { text } = await res.json();
@@ -90,6 +131,8 @@ export default function VoiceRecorder({ value, onChange }: Props) {
     const s = seconds % 60;
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
+
+  const remaining = MAX_RECORDING_SECONDS - recordingTime;
 
   return (
     <div className="space-y-2">
@@ -121,11 +164,32 @@ export default function VoiceRecorder({ value, onChange }: Props) {
           </button>
         )}
 
+        {isRecording && (
+          <span className="text-xs text-gray-400">
+            残り {remaining}秒
+          </span>
+        )}
+
         {isTranscribing && (
           <span className="text-sm text-gray-500 flex items-center gap-1">
-            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            <svg
+              className="animate-spin h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
             </svg>
             文字起こし中...
           </span>
@@ -141,7 +205,7 @@ export default function VoiceRecorder({ value, onChange }: Props) {
         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-murata-primary focus:border-transparent resize-y"
       />
       <p className="text-xs text-gray-400">
-        音声入力した内容はテキストに変換されます。手動で編集も可能です。
+        音声入力した内容はテキストに変換されます。手動で編集も可能です。（最大{MAX_RECORDING_SECONDS}秒）
       </p>
     </div>
   );
