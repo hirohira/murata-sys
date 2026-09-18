@@ -7,7 +7,7 @@ interface Props {
   onChange: (text: string) => void;
 }
 
-const MAX_RECORDING_SECONDS = 60;
+const MAX_RECORDING_SECONDS = 20;
 
 export default function VoiceRecorder({ value, onChange }: Props) {
   const [isRecording, setIsRecording] = useState(false);
@@ -30,7 +30,6 @@ export default function VoiceRecorder({ value, onChange }: Props) {
         },
       });
 
-      // Try to use a lower bitrate codec to keep file size small
       let mimeType = "audio/webm";
       if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
         mimeType = "audio/webm;codecs=opus";
@@ -38,7 +37,7 @@ export default function VoiceRecorder({ value, onChange }: Props) {
 
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType,
-        audioBitsPerSecond: 16000, // Low bitrate to reduce file size
+        audioBitsPerSecond: 16000,
       });
 
       chunksRef.current = [];
@@ -58,7 +57,6 @@ export default function VoiceRecorder({ value, onChange }: Props) {
       setIsRecording(true);
       setRecordingTime(0);
 
-      // Auto-stop after MAX_RECORDING_SECONDS
       let seconds = 0;
       timerRef.current = setInterval(() => {
         seconds += 1;
@@ -83,18 +81,13 @@ export default function VoiceRecorder({ value, onChange }: Props) {
     }
   }, []);
 
-  // Keep ref in sync for auto-stop timer
   stopRecordingRef.current = stopRecording;
 
   const transcribeAudio = async (blob: Blob) => {
     setIsTranscribing(true);
     try {
-      // Check file size before sending
-      const sizeMB = blob.size / (1024 * 1024);
-      if (sizeMB > 4) {
-        throw new Error(
-          `音声ファイルが大きすぎます（${sizeMB.toFixed(1)}MB）。短めに録音してください。`
-        );
+      if (blob.size > 2 * 1024 * 1024) {
+        throw new Error("音声ファイルが大きすぎます。短めに録音してください。");
       }
 
       const formData = new FormData();
@@ -117,7 +110,6 @@ export default function VoiceRecorder({ value, onChange }: Props) {
       }
 
       const { text } = await res.json();
-      // Append transcribed text to existing description
       onChange(value ? `${value}\n${text}` : text);
     } catch (err) {
       alert(err instanceof Error ? err.message : "文字起こしに失敗しました");
@@ -136,7 +128,6 @@ export default function VoiceRecorder({ value, onChange }: Props) {
 
   return (
     <div className="space-y-2">
-      {/* Voice recording controls */}
       <div className="flex items-center gap-2">
         {!isRecording ? (
           <button
@@ -165,9 +156,7 @@ export default function VoiceRecorder({ value, onChange }: Props) {
         )}
 
         {isRecording && (
-          <span className="text-xs text-gray-400">
-            残り {remaining}秒
-          </span>
+          <span className="text-xs text-gray-400">残り {remaining}秒</span>
         )}
 
         {isTranscribing && (
@@ -196,7 +185,6 @@ export default function VoiceRecorder({ value, onChange }: Props) {
         )}
       </div>
 
-      {/* Text input area */}
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}

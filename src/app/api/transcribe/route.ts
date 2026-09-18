@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
-
-// Vercel Hobby plan: max 4.5MB body, 10s execution
-// Increase body size limit for audio uploads
-export const maxDuration = 30; // seconds (Pro plan allows up to 60)
+import OpenAI, { toFile } from "openai";
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,8 +21,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check file size (limit to 4MB to stay under Vercel's body limit)
-    if (audioFile.size > 4 * 1024 * 1024) {
+    // Check file size (limit to 2MB to stay well under limits)
+    if (audioFile.size > 2 * 1024 * 1024) {
       return NextResponse.json(
         { error: "音声ファイルが大きすぎます。短めに録音してください。" },
         { status: 400 }
@@ -35,16 +31,16 @@ export async function POST(req: NextRequest) {
 
     const openai = new OpenAI({ apiKey });
 
-    // Convert File to a proper File object that the OpenAI SDK can handle
-    // in Vercel's serverless environment
+    // Use OpenAI SDK's toFile utility for reliable file handling in serverless
     const arrayBuffer = await audioFile.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const file = new File([buffer], "recording.webm", {
-      type: audioFile.type || "audio/webm",
-    });
+    const file = await toFile(
+      new Uint8Array(arrayBuffer),
+      "recording.webm",
+      { type: "audio/webm" }
+    );
 
     const transcription = await openai.audio.transcriptions.create({
-      file: file,
+      file,
       model: "whisper-1",
       language: "ja",
       prompt:
