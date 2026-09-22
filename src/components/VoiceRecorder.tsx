@@ -128,18 +128,18 @@ export default function VoiceRecorder({ value, onChange }: Props) {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         {!isRecording ? (
           <button
             onClick={startRecording}
             disabled={isTranscribing}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`flex items-center justify-center gap-3 w-full px-6 py-4 rounded-xl text-base font-bold transition-colors ${
               isTranscribing
                 ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                : "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200"
+                : "bg-red-50 text-red-600 hover:bg-red-100 border-2 border-red-300 active:scale-[0.98]"
             }`}
           >
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
               <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
             </svg>
@@ -148,42 +148,39 @@ export default function VoiceRecorder({ value, onChange }: Props) {
         ) : (
           <button
             onClick={stopRecording}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 animate-pulse"
+            className="flex items-center justify-center gap-3 w-full px-6 py-4 rounded-xl text-base font-bold bg-red-600 text-white hover:bg-red-700 animate-pulse active:scale-[0.98]"
           >
-            <span className="w-3 h-3 bg-white rounded-sm" />
+            <span className="w-4 h-4 bg-white rounded-sm" />
             録音停止 {formatTime(recordingTime)}
+            <span className="text-sm font-normal opacity-80">残り {remaining}秒</span>
           </button>
         )}
-
-        {isRecording && (
-          <span className="text-xs text-gray-400">残り {remaining}秒</span>
-        )}
-
-        {isTranscribing && (
-          <span className="text-sm text-gray-500 flex items-center gap-1">
-            <svg
-              className="animate-spin h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-              />
-            </svg>
-            文字起こし中...
-          </span>
-        )}
       </div>
+
+      {isTranscribing && (
+        <div className="flex items-center justify-center gap-2 py-3 text-gray-500">
+          <svg
+            className="animate-spin h-5 w-5"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
+          </svg>
+          <span className="text-sm font-medium">文字起こし中...</span>
+        </div>
+      )}
 
       <textarea
         value={value}
