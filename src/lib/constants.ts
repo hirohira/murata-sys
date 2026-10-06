@@ -78,7 +78,6 @@ export const SEVERITY_COLORS: Record<FindingSeverity, { bg: string; text: string
 
 export const REPORT_STYLES: { value: ReportStyle; label: string; description: string }[] = [
   { value: '茂様式', label: '茂様式', description: '赤ストライプフッター・Mロゴ付き' },
-  { value: '大野様式', label: '大野様式', description: 'ホワイトベース・シンプル' },
 ];
 
 // Default chapters for 調査報告書

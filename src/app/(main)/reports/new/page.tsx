@@ -87,7 +87,8 @@ function NewReportWizard() {
   // Step 2: 基本情報
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState(preselectedProjectId || '');
-  const [reportStyle, setReportStyle] = useState<ReportStyle>('茂様式');
+  // 報告書様式は茂様式に統一
+  const reportStyle: ReportStyle = '茂様式';
   const [audienceType, setAudienceType] = useState<AudienceType>('一般施主向け');
   const [surveyDate, setSurveyDate] = useState(
     new Date().toISOString().slice(0, 10)
@@ -514,8 +515,6 @@ function NewReportWizard() {
           projectId={projectId}
           setProjectId={setProjectId}
           selectedProject={selectedProject}
-          reportStyle={reportStyle}
-          setReportStyle={setReportStyle}
           audienceType={audienceType}
           setAudienceType={setAudienceType}
           surveyDate={surveyDate}
@@ -720,8 +719,6 @@ function Step2BasicInfo({
   projectId,
   setProjectId,
   selectedProject,
-  reportStyle,
-  setReportStyle,
   audienceType,
   setAudienceType,
   surveyDate,
@@ -738,8 +735,6 @@ function Step2BasicInfo({
   projectId: string;
   setProjectId: (id: string) => void;
   selectedProject?: Project;
-  reportStyle: ReportStyle;
-  setReportStyle: (s: ReportStyle) => void;
   audienceType: AudienceType;
   setAudienceType: (t: AudienceType) => void;
   surveyDate: string;
@@ -782,38 +777,7 @@ function Step2BasicInfo({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* 報告書様式 */}
-        <div className="card">
-          <div className="card-header">
-            <h3 className="font-semibold text-sm">報告書様式</h3>
-          </div>
-          <div className="card-body">
-            <div className="flex gap-2">
-              {(
-                [
-                  { value: '茂様式' as ReportStyle, label: '茂様式', desc: '赤ストライプ' },
-                  { value: '大野様式' as ReportStyle, label: '大野様式', desc: 'ホワイト' },
-                ] as const
-              ).map(({ value, label, desc }) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setReportStyle(value)}
-                  className={`flex-1 py-2.5 px-3 rounded-lg border-2 text-center text-sm transition-colors ${
-                    reportStyle === value
-                      ? 'border-murata-primary bg-murata-primary/5 text-murata-primary font-medium'
-                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="font-medium">{label}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{desc}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
+      <div className="grid grid-cols-1 gap-4">
         {/* 読み手 */}
         <div className="card">
           <div className="card-header">
