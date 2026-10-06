@@ -7,6 +7,9 @@ import type {
   AudienceType,
   Weather,
   PhotoCategory,
+  ReportType,
+  ReportStatus,
+  FindingSeverity,
 } from '@/types';
 
 export const PROJECT_STATUSES: ProjectStatus[] = [
@@ -54,10 +57,29 @@ export const CATEGORY_COLORS: Record<PhotoCategory, { bg: string; text: string }
   '対策': { bg: 'bg-green-100', text: 'text-green-800' },
 };
 
+export const REPORT_TYPES: ReportType[] = ['調査報告書', '完了報告書'];
+
+export const REPORT_STATUSES: ReportStatus[] = ['下書き', '確認中', '承認済み'];
+
+export const SEVERITY_LEVELS: FindingSeverity[] = ['要補修', '経過観察', '問題なし'];
+
+export const REPORT_STATUS_COLORS: Record<ReportStatus, { bg: string; text: string }> = {
+  '下書き': { bg: 'bg-gray-100', text: 'text-gray-600' },
+  '確認中': { bg: 'bg-amber-100', text: 'text-amber-800' },
+  '承認済み': { bg: 'bg-emerald-100', text: 'text-emerald-800' },
+};
+
+export const SEVERITY_COLORS: Record<FindingSeverity, { bg: string; text: string }> = {
+  '要補修': { bg: 'bg-red-100', text: 'text-red-800' },
+  '経過観察': { bg: 'bg-amber-100', text: 'text-amber-800' },
+  '問題なし': { bg: 'bg-green-100', text: 'text-green-800' },
+};
+
 // Navigation items
 export const NAV_ITEMS = [
   { href: '/dashboard', label: 'ダッシュボード', icon: 'dashboard' },
   { href: '/projects', label: '案件一覧', icon: 'projects' },
   { href: '/daily-reports/new', label: '日報入力', icon: 'report' },
+  { href: '/reports', label: '報告書', icon: 'reports' },
   { href: '/settings', label: '設定', icon: 'settings' },
 ] as const;

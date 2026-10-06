@@ -20,6 +20,12 @@ export type Weather = '晴' | '曇' | '雨' | '雪';
 
 export type PhotoCategory = '全体' | '状況' | '原因' | '対策';
 
+export type ReportType = '調査報告書' | '完了報告書';
+
+export type ReportStatus = '下書き' | '確認中' | '承認済み';
+
+export type FindingSeverity = '要補修' | '経過観察' | '問題なし';
+
 // Database row types
 export interface User {
   id: string;
@@ -75,6 +81,33 @@ export interface ReportPhoto {
   ai_classification: string | null;
   sort_order: number;
   created_at: string;
+}
+
+export interface ReportFinding {
+  photoId?: string;
+  photoNumber: number;
+  photoUrl?: string;
+  location: string;
+  finding: string;
+  severity: FindingSeverity;
+  recommendation: string;
+}
+
+export interface Report {
+  id: string;
+  project_id: string;
+  report_type: ReportType;
+  title: string;
+  summary: string | null;
+  findings: ReportFinding[];
+  recommendation: string | null;
+  generated_by_ai: boolean;
+  status: ReportStatus;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  project?: Project;
 }
 
 // Form input types

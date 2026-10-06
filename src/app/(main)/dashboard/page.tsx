@@ -3,24 +3,29 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import ProjectStatusBadge from '@/components/projects/ProjectStatusBadge';
-import type { Project, DailyReport, ProjectStatus } from '@/types';
+import type { Project, DailyReport, Report, ProjectStatus, ReportStatus } from '@/types';
+import { REPORT_STATUS_COLORS } from '@/lib/constants';
 
 export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [recentReports, setRecentReports] = useState<DailyReport[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [projRes, reportRes] = await Promise.all([
+        const [projRes, reportRes, reportsRes] = await Promise.all([
           fetch('/api/projects'),
           fetch('/api/daily-reports'),
+          fetch('/api/reports'),
         ]);
         const { data: projData } = await projRes.json();
         const { data: reportData } = await reportRes.json();
+        const { data: reportsData } = await reportsRes.json();
         setProjects(projData || []);
         setRecentReports((reportData || []).slice(0, 5));
+        setReports(reportsData || []);
       } catch (err) {
         console.error('Dashboard fetch error:', err);
       } finally {
@@ -73,6 +78,27 @@ export default function DashboardPage() {
         <StatCard label="本日の日報" value={todayReports.length} unit="件" />
         <StatCard label="今月の日報" value={recentReports.length} unit="件" />
       </div>
+
+      {/* Report stats */}
+      {reports.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-5">
+          <Link href="/reports" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 hover:shadow-sm transition-shadow">
+            <span className="text-sm text-gray-500">報告書</span>
+            <span className="text-sm font-bold text-gray-900">{reports.length}件</span>
+          </Link>
+          {(['下書き', '確認中', '承認済み'] as ReportStatus[]).map((status) => {
+            const count = reports.filter((r) => r.status === status).length;
+            if (count === 0) return null;
+            const color = REPORT_STATUS_COLORS[status];
+            return (
+              <Link key={status} href={`/reports?status=${status}`} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg ${color.bg} hover:opacity-80 transition-opacity`}>
+                <span className={`text-xs font-medium ${color.text}`}>{status}</span>
+                <span className={`text-sm font-bold ${color.text}`}>{count}</span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-2">
         {/* Recent reports */}
