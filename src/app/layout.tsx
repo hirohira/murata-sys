@@ -1,9 +1,15 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import type { Metadata, Viewport } from 'next';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "MURATA 調査報告書システム",
-  description: "現場写真と音声入力から調査報告書を自動生成",
+  title: 'MURATA 日報・報告書システム',
+  description: '株式会社MURATA 業務支援システム',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({
@@ -13,7 +19,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body className="bg-gray-100 min-h-screen">{children}</body>
+      <body className="font-sans">{children}</body>
     </html>
   );
 }

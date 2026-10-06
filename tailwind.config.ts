@@ -8,12 +8,17 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['"Noto Sans JP"', 'sans-serif'],
+      },
       colors: {
         murata: {
           primary: '#1B4F72',
+          'primary-light': '#EBF2F7',
           light: '#D4E6F1',
-          accent: '#E67E22',
-          dark: '#2C3E50',
+          accent: '#D32F2F',
+          'accent-light': '#FDEAEA',
+          dark: '#164060',
         },
       },
     },
