@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import type { Report, ReportStatus, ReportFinding, FindingSeverity, ReportChapter } from '@/types';
 import { REPORT_STATUS_COLORS, SEVERITY_COLORS } from '@/lib/constants';
+import ReportSlidePreview from '@/components/reports/ReportSlidePreview';
 
 export default function ReportDetailPage() {
   const router = useRouter();
@@ -16,6 +17,7 @@ export default function ReportDetailPage() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
 
   // Editable fields
@@ -94,6 +96,27 @@ export default function ReportDetailPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : '削除に失敗しました');
       setDeleting(false);
+    }
+  };
+
+  const handleExportPptx = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/reports/${reportId}/export`);
+      if (!res.ok) throw new Error('エクスポートに失敗しました');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${report?.title || '報告書'}.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'エクスポートに失敗しました');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -484,6 +507,40 @@ export default function ReportDetailPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Slide Preview (茂様式) */}
+      {report.chapters && report.chapters.length > 0 && (
+        <div className="card mb-5">
+          <div className="card-body">
+            <ReportSlidePreview report={report} />
+          </div>
+          <div className="card-body border-t border-gray-100 pt-3">
+            <button
+              type="button"
+              onClick={handleExportPptx}
+              disabled={exporting}
+              className="w-full flex items-center justify-center gap-2 btn btn-primary"
+            >
+              {exporting ? (
+                <>
+                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  エクスポート中...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  PowerPointエクスポート
+                </>
+              )}
+            </button>
           </div>
         </div>
       )}

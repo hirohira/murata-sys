@@ -98,6 +98,8 @@ export interface ReportFinding {
 }
 
 // Chapter-based report structure (for 4-step wizard)
+export type PhotoTag = 'before' | 'after';
+
 export interface ChapterPhoto {
   id: string;
   file?: File;         // client-side only
@@ -106,6 +108,7 @@ export interface ChapterPhoto {
   path?: string;       // Supabase Storage path
   caption: string;
   sort_order: number;
+  tag?: PhotoTag;      // 完了報告書: 施工前/施工後タグ
 }
 
 export interface ReportChapter {

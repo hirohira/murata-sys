@@ -15,6 +15,7 @@ import type {
   ReportStyle,
   AudienceType,
   ReportMeta,
+  PhotoTag,
 } from '@/types';
 import {
   SURVEY_REPORT_CHAPTERS,
@@ -196,6 +197,24 @@ function NewReportWizard() {
                 ...ch,
                 photos: ch.photos.map((p) =>
                   p.id === photoId ? { ...p, caption } : p
+                ),
+              }
+            : ch
+        )
+      );
+    },
+    []
+  );
+
+  const handleUpdatePhotoTag = useCallback(
+    (chapterId: string, photoId: string, tag: PhotoTag) => {
+      setChapters((prev) =>
+        prev.map((ch) =>
+          ch.id === chapterId
+            ? {
+                ...ch,
+                photos: ch.photos.map((p) =>
+                  p.id === photoId ? { ...p, tag } : p
                 ),
               }
             : ch
@@ -521,7 +540,9 @@ function NewReportWizard() {
           onAddPhoto={handleAddPhoto}
           onRemovePhoto={handleRemovePhoto}
           onUpdatePhotoCaption={handleUpdatePhotoCaption}
+          onUpdatePhotoTag={handleUpdatePhotoTag}
           onMoveChapter={moveChapter}
+          isCompletionReport={reportType === '完了報告書'}
         />
       )}
 
@@ -898,7 +919,9 @@ function Step3Chapters({
   onAddPhoto,
   onRemovePhoto,
   onUpdatePhotoCaption,
+  onUpdatePhotoTag,
   onMoveChapter,
+  isCompletionReport,
 }: {
   chapters: ReportChapter[];
   activeChapterIdx: number;
@@ -907,7 +930,9 @@ function Step3Chapters({
   onAddPhoto: (chapterId: string, file: File) => void;
   onRemovePhoto: (chapterId: string, photoId: string) => void;
   onUpdatePhotoCaption: (chapterId: string, photoId: string, caption: string) => void;
+  onUpdatePhotoTag: (chapterId: string, photoId: string, tag: PhotoTag) => void;
   onMoveChapter: (idx: number, direction: -1 | 1) => void;
+  isCompletionReport: boolean;
 }) {
   const activeChapter = chapters[activeChapterIdx];
 
@@ -1053,6 +1078,8 @@ function Step3Chapters({
                 onAddPhoto={onAddPhoto}
                 onRemovePhoto={onRemovePhoto}
                 onUpdatePhotoCaption={onUpdatePhotoCaption}
+                onUpdatePhotoTag={onUpdatePhotoTag}
+                isCompletionReport={isCompletionReport}
               />
             </div>
           </div>
