@@ -17,7 +17,7 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -26,6 +26,24 @@ export default function LoginPage() {
       setError('メールアドレスまたはパスワードが正しくありません');
       setLoading(false);
       return;
+    }
+
+    // Ensure public.users profile exists
+    if (data.user) {
+      const { data: existing } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', data.user.id)
+        .single();
+
+      if (!existing) {
+        await supabase.from('users').insert({
+          id: data.user.id,
+          name: data.user.email?.split('@')[0] || '未設定',
+          email: data.user.email || '',
+          role: 'admin',
+        });
+      }
     }
 
     router.push('/dashboard');
