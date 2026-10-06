@@ -48,7 +48,14 @@ export default function ChapterEditor({
         <div className="w-8 h-8 rounded-lg bg-murata-primary/10 text-murata-primary flex items-center justify-center text-sm font-bold flex-shrink-0">
           {chapter.sort_order + 1}
         </div>
-        <h3 className="font-bold text-gray-900">{chapter.title}</h3>
+        <input
+          type="text"
+          value={chapter.title}
+          onChange={(e) => onUpdate({ ...chapter, title: e.target.value })}
+          aria-label="章の名前"
+          placeholder="章の名前"
+          className="flex-1 min-w-0 font-bold text-gray-900 bg-transparent border-b border-dashed border-gray-300 focus:border-murata-primary focus:outline-none py-1"
+        />
       </div>
 
       {/* Photo section */}

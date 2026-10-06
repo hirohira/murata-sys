@@ -6,6 +6,7 @@ import Link from 'next/link';
 import type { Report, ReportStatus, ReportFinding, FindingSeverity, ReportChapter } from '@/types';
 import { REPORT_STATUS_COLORS, SEVERITY_COLORS } from '@/lib/constants';
 import ReportSlidePreview from '@/components/reports/ReportSlidePreview';
+import { getOutputChapters } from '@/lib/chapter-numbering';
 
 export default function ReportDetailPage() {
   const router = useRouter();
@@ -478,15 +479,11 @@ export default function ReportDetailPage() {
             <h3 className="font-semibold text-sm">章立て</h3>
           </div>
           <div className="card-body space-y-4">
-            {(report.chapters as ReportChapter[]).map((ch, idx) => {
-              if (!ch.description && (!ch.photos || ch.photos.length === 0)) return null;
+            {getOutputChapters(report.chapters as ReportChapter[]).map(({ chapter: ch, displayTitle }, idx) => {
               return (
                 <div key={ch.id || idx} className="border border-gray-200 rounded-lg p-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="w-6 h-6 rounded bg-murata-primary text-white flex items-center justify-center text-xs font-bold">
-                      {idx + 1}
-                    </span>
-                    <h4 className="text-sm font-semibold text-gray-900">{ch.title}</h4>
+                    <h4 className="text-sm font-semibold text-gray-900">{displayTitle}</h4>
                     {ch.ai_generated && (
                       <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">AI</span>
                     )}

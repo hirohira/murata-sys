@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import type { Report, ReportChapter } from '@/types';
+import { getOutputChapters } from '@/lib/chapter-numbering';
 
 interface Props {
   report: Report;
@@ -129,14 +130,9 @@ function buildSlides(report: Report): React.ReactNode[] {
   // Cover slide
   slides.push(<CoverSlide key="cover" report={report} />);
 
-  // One slide per chapter (skip empty ones)
-  const chapters = (report.chapters || []) as ReportChapter[];
-  chapters.forEach((ch, idx) => {
-    if (!ch.description && (!ch.photos || ch.photos.length === 0)) return;
-    // Skip cover chapter — it's the cover slide already
-    if (ch.key === 'cover') return;
-
-    slides.push(<ChapterSlide key={ch.id || idx} chapter={ch} index={idx} />);
+  // One slide per chapter (empty chapters and the cover chapter are skipped)
+  getOutputChapters(report.chapters).forEach(({ chapter, displayTitle }, idx) => {
+    slides.push(<ChapterSlide key={chapter.id || idx} chapter={chapter} title={displayTitle} />);
   });
 
   return slides;
@@ -196,7 +192,7 @@ function CoverSlide({ report }: { report: Report }) {
   );
 }
 
-function ChapterSlide({ chapter, index }: { chapter: ReportChapter; index: number }) {
+function ChapterSlide({ chapter, title }: { chapter: ReportChapter; title: string }) {
   const photos = chapter.photos || [];
   const hasBeforeAfter = photos.some((p) => p.tag === 'before' || p.tag === 'after');
 
@@ -213,7 +209,7 @@ function ChapterSlide({ chapter, index }: { chapter: ReportChapter; index: numbe
           borderBottom: '2.5px solid #D32F2F',
         }}
       >
-        {chapter.title}
+        {title}
       </div>
 
       <div className="flex-1 px-4 py-3 overflow-hidden" style={{ fontSize: '10px' }}>

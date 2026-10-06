@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import type { Report, ReportChapter } from '@/types';
+import type { Report } from '@/types';
+import { getOutputChapters } from '@/lib/chapter-numbering';
 
 export async function GET(
   request: NextRequest,
@@ -105,19 +106,16 @@ export async function GET(
     });
 
     // ─── Chapter slides ───
-    const chapters = (report.chapters || []) as ReportChapter[];
     let slideNum = 2;
 
-    for (const ch of chapters) {
-      if (ch.key === 'cover') continue;
-      if (!ch.description && (!ch.photos || ch.photos.length === 0)) continue;
+    for (const { chapter: ch, displayTitle } of getOutputChapters(report.chapters)) {
 
       const slide = pptx.addSlide();
       addMurataFooter(slide, slideNum);
       slideNum++;
 
       // Chapter header
-      slide.addText(ch.title, {
+      slide.addText(displayTitle, {
         x: 0.0,
         y: 0.0,
         w: 10.0,

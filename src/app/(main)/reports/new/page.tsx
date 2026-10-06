@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import WizardStepper from '@/components/reports/WizardStepper';
@@ -16,10 +16,11 @@ import type {
   AudienceType,
   ReportMeta,
   PhotoTag,
+  ConstructionType,
 } from '@/types';
+import { hasChapterContent } from '@/lib/chapter-numbering';
 import {
-  SURVEY_REPORT_CHAPTERS,
-  COMPLETION_REPORT_CHAPTERS,
+  getChapterTemplate,
   AUDIENCE_TYPES,
   BUILDING_TYPES,
 } from '@/lib/constants';
@@ -52,11 +53,11 @@ function genId() {
   return `${Date.now()}-${_idCounter}`;
 }
 
-function createDefaultChapters(reportType: ReportType): ReportChapter[] {
-  const templates =
-    reportType === '調査報告書'
-      ? SURVEY_REPORT_CHAPTERS
-      : COMPLETION_REPORT_CHAPTERS;
+function createDefaultChapters(
+  reportType: ReportType,
+  constructionType?: ConstructionType | null
+): ReportChapter[] {
+  const templates = getChapterTemplate(reportType, constructionType);
 
   return templates.map((t, i) => ({
     id: genId(),
@@ -126,15 +127,21 @@ function NewReportWizard() {
     })();
   }, []);
 
-  // Re-create chapters when report type changes (only before step 3)
-  useEffect(() => {
-    if (step < 3) {
-      setChapters(createDefaultChapters(reportType));
-      setActiveChapterIdx(0);
-    }
-  }, [reportType, step]);
-
   const selectedProject = projects.find((p) => p.id === projectId);
+  const constructionType = selectedProject?.construction_type ?? null;
+
+  // 章立てを手で編集した（追加・削除・名前変更・並べ替え）か
+  const chaptersEditedRef = useRef(false);
+
+  // 報告書種別・工事種別に合わせて章立てのひな形を切り替える。
+  // 写真や説明文を入力済み、または章を手で編集済みの場合は上書きしない。
+  useEffect(() => {
+    setChapters((prev) => {
+      if (chaptersEditedRef.current || prev.some(hasChapterContent)) return prev;
+      return createDefaultChapters(reportType, constructionType);
+    });
+    setActiveChapterIdx(0);
+  }, [reportType, constructionType]);
 
   // Populate fields from selected project
   useEffect(() => {
@@ -227,12 +234,70 @@ function NewReportWizard() {
 
   const handleUpdateChapter = useCallback((updated: ReportChapter) => {
     setChapters((prev) =>
-      prev.map((ch) => (ch.id === updated.id ? updated : ch))
+      prev.map((ch) => {
+        if (ch.id !== updated.id) return ch;
+        if (ch.title !== updated.title) chaptersEditedRef.current = true;
+        return updated;
+      })
     );
   }, []);
 
+  // 章を追加（選択中の章の直後に挿入）
+  const addChapter = useCallback(() => {
+    chaptersEditedRef.current = true;
+    const insertAt = activeChapterIdx + 1;
+    setChapters((prev) => {
+      const next = [...prev];
+      next.splice(insertAt, 0, {
+        id: genId(),
+        title: '新しい章',
+        key: `custom_${genId()}`,
+        photos: [],
+        description: '',
+        ai_generated: false,
+        sort_order: 0,
+      });
+      return next.map((ch, i) => ({ ...ch, sort_order: i }));
+    });
+    setActiveChapterIdx(insertAt);
+  }, [activeChapterIdx]);
+
+  // 章を削除
+  const removeChapter = useCallback(
+    (idx: number) => {
+      const target = chapters[idx];
+      if (!target || chapters.length <= 1) return;
+      if (
+        hasChapterContent(target) &&
+        !confirm(`「${target.title}」には写真や説明文が入っています。削除しますか？`)
+      ) {
+        return;
+      }
+      chaptersEditedRef.current = true;
+      setChapters((prev) =>
+        prev.filter((_, i) => i !== idx).map((ch, i) => ({ ...ch, sort_order: i }))
+      );
+      setActiveChapterIdx((prev) => Math.max(0, Math.min(prev, chapters.length - 2)));
+    },
+    [chapters]
+  );
+
+  // ひな形に戻す
+  const resetChapters = useCallback(() => {
+    if (
+      chapters.some(hasChapterContent) &&
+      !confirm('入力した写真・説明文も消えます。章立てをひな形に戻しますか？')
+    ) {
+      return;
+    }
+    chaptersEditedRef.current = false;
+    setChapters(createDefaultChapters(reportType, constructionType));
+    setActiveChapterIdx(0);
+  }, [chapters, reportType, constructionType]);
+
   // Move chapter up/down
   const moveChapter = useCallback((idx: number, direction: -1 | 1) => {
+    chaptersEditedRef.current = true;
     setChapters((prev) => {
       const newChapters = [...prev];
       const targetIdx = idx + direction;
@@ -541,6 +606,10 @@ function NewReportWizard() {
           onUpdatePhotoCaption={handleUpdatePhotoCaption}
           onUpdatePhotoTag={handleUpdatePhotoTag}
           onMoveChapter={moveChapter}
+          onAddChapter={addChapter}
+          onRemoveChapter={removeChapter}
+          onResetChapters={resetChapters}
+          templateLabel={`${reportType}・${constructionType ?? '雨漏り調査'}`}
           isCompletionReport={reportType === '完了報告書'}
         />
       )}
@@ -885,6 +954,10 @@ function Step3Chapters({
   onUpdatePhotoCaption,
   onUpdatePhotoTag,
   onMoveChapter,
+  onAddChapter,
+  onRemoveChapter,
+  onResetChapters,
+  templateLabel,
   isCompletionReport,
 }: {
   chapters: ReportChapter[];
@@ -896,6 +969,10 @@ function Step3Chapters({
   onUpdatePhotoCaption: (chapterId: string, photoId: string, caption: string) => void;
   onUpdatePhotoTag: (chapterId: string, photoId: string, tag: PhotoTag) => void;
   onMoveChapter: (idx: number, direction: -1 | 1) => void;
+  onAddChapter: () => void;
+  onRemoveChapter: (idx: number) => void;
+  onResetChapters: () => void;
+  templateLabel: string;
   isCompletionReport: boolean;
 }) {
   const activeChapter = chapters[activeChapterIdx];
@@ -907,6 +984,9 @@ function Step3Chapters({
         <div className="card sticky top-4">
           <div className="card-header">
             <h3 className="font-semibold text-sm">章立て</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              ひな形: {templateLabel}
+            </p>
           </div>
           <div className="card-body p-0">
             {/* Mobile: horizontal scroll pills */}
@@ -977,6 +1057,26 @@ function Step3Chapters({
                 );
               })}
             </div>
+
+            <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={onAddChapter}
+                className="text-sm text-murata-primary font-medium hover:underline"
+              >
+                + 章を追加
+              </button>
+              <button
+                type="button"
+                onClick={onResetChapters}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                ひな形に戻す
+              </button>
+            </div>
+            <p className="px-4 pb-3 text-xs text-gray-400">
+              写真も説明文もない章は報告書に出力されません。番号（①②…）は出力時に自動で振られます。
+            </p>
           </div>
         </div>
       </div>
@@ -1008,6 +1108,15 @@ function Step3Chapters({
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                   </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRemoveChapter(activeChapterIdx)}
+                  disabled={chapters.length <= 1}
+                  className="ml-1 px-2 py-1 rounded text-xs text-red-500 hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="この章を削除"
+                >
+                  章を削除
                 </button>
               </div>
               <div className="flex gap-1">
