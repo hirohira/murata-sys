@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import WeatherSelector from '@/components/daily-reports/WeatherSelector';
@@ -10,6 +10,14 @@ import { compressPhoto, dataURLtoBlob } from '@/lib/compress-photo';
 import type { Project, Weather, PhotoEntry, PhotoCategory } from '@/types';
 
 export default function NewDailyReportPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="animate-spin w-8 h-8 border-2 border-murata-primary border-t-transparent rounded-full" /></div>}>
+      <NewDailyReportContent />
+    </Suspense>
+  );
+}
+
+function NewDailyReportContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedProjectId = searchParams.get('projectId');
