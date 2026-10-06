@@ -26,6 +26,10 @@ export type ReportStatus = '下書き' | '確認中' | '承認済み';
 
 export type FindingSeverity = '要補修' | '経過観察' | '問題なし';
 
+export type ReportStyle = '茂様式' | '大野様式';
+
+export type InputPattern = 'onsite' | 'office';
+
 // Database row types
 export interface User {
   id: string;
@@ -93,6 +97,36 @@ export interface ReportFinding {
   recommendation: string;
 }
 
+// Chapter-based report structure (for 4-step wizard)
+export interface ChapterPhoto {
+  id: string;
+  file?: File;         // client-side only
+  preview?: string;    // client-side blob URL
+  url?: string;        // uploaded Supabase Storage URL
+  path?: string;       // Supabase Storage path
+  caption: string;
+  sort_order: number;
+}
+
+export interface ReportChapter {
+  id: string;
+  title: string;
+  key: string;         // e.g. 'cover', 'overview', 'condition', etc.
+  photos: ChapterPhoto[];
+  description: string; // AI-generated or manually entered text
+  ai_generated: boolean;
+  sort_order: number;
+}
+
+export interface ReportMeta {
+  input_pattern?: InputPattern;
+  report_style?: ReportStyle;
+  survey_date?: string;
+  addressee?: string;
+  construction_name?: string;
+  purpose?: string;
+}
+
 export interface Report {
   id: string;
   project_id: string;
@@ -100,6 +134,8 @@ export interface Report {
   title: string;
   summary: string | null;
   findings: ReportFinding[];
+  chapters: ReportChapter[];
+  meta: ReportMeta | null;
   recommendation: string | null;
   generated_by_ai: boolean;
   status: ReportStatus;

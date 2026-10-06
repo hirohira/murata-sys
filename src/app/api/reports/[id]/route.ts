@@ -41,6 +41,8 @@ export async function PATCH(
     if (body.summary !== undefined) updateData.summary = body.summary;
     if (body.findings !== undefined) updateData.findings = body.findings;
     if (body.recommendation !== undefined) updateData.recommendation = body.recommendation;
+    if (body.chapters !== undefined) updateData.chapters = body.chapters;
+    if (body.meta !== undefined) updateData.meta = body.meta;
     if (body.status !== undefined) updateData.status = body.status;
 
     const { data, error } = await supabase

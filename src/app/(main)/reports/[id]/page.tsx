@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import type { Report, ReportStatus, ReportFinding, FindingSeverity } from '@/types';
+import type { Report, ReportStatus, ReportFinding, FindingSeverity, ReportChapter } from '@/types';
 import { REPORT_STATUS_COLORS, SEVERITY_COLORS } from '@/lib/constants';
 
 export default function ReportDetailPage() {
@@ -447,6 +447,46 @@ export default function ReportDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Chapters (new wizard-based reports) */}
+      {report.chapters && report.chapters.length > 0 && (
+        <div className="card mb-5">
+          <div className="card-header">
+            <h3 className="font-semibold text-sm">章立て</h3>
+          </div>
+          <div className="card-body space-y-4">
+            {(report.chapters as ReportChapter[]).map((ch, idx) => {
+              if (!ch.description && (!ch.photos || ch.photos.length === 0)) return null;
+              return (
+                <div key={ch.id || idx} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-6 h-6 rounded bg-murata-primary text-white flex items-center justify-center text-xs font-bold">
+                      {idx + 1}
+                    </span>
+                    <h4 className="text-sm font-semibold text-gray-900">{ch.title}</h4>
+                    {ch.ai_generated && (
+                      <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">AI</span>
+                    )}
+                  </div>
+                  {ch.photos && ch.photos.length > 0 && (
+                    <div className="flex gap-1.5 mb-3 overflow-x-auto">
+                      {ch.photos.map((p) => (
+                        <div key={p.id} className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={p.url || ''} alt={p.caption || ''} className="w-full h-full object-cover" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {ch.description && (
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{ch.description}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Recommendation */}
       <div className="card mb-5">

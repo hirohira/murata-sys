@@ -49,6 +49,8 @@ export async function POST(req: NextRequest) {
         title: body.title,
         summary: body.summary || null,
         findings: body.findings || [],
+        chapters: body.chapters || [],
+        meta: body.meta || null,
         recommendation: body.recommendation || null,
         generated_by_ai: body.generated_by_ai || false,
         status: body.status || '下書き',

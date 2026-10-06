@@ -10,6 +10,7 @@ import type {
   ReportType,
   ReportStatus,
   FindingSeverity,
+  ReportStyle,
 } from '@/types';
 
 export const PROJECT_STATUSES: ProjectStatus[] = [
@@ -74,6 +75,35 @@ export const SEVERITY_COLORS: Record<FindingSeverity, { bg: string; text: string
   '経過観察': { bg: 'bg-amber-100', text: 'text-amber-800' },
   '問題なし': { bg: 'bg-green-100', text: 'text-green-800' },
 };
+
+export const REPORT_STYLES: { value: ReportStyle; label: string; description: string }[] = [
+  { value: '茂様式', label: '茂様式', description: '赤ストライプフッター・Mロゴ付き' },
+  { value: '大野様式', label: '大野様式', description: 'ホワイトベース・シンプル' },
+];
+
+// Default chapters for 調査報告書
+export const SURVEY_REPORT_CHAPTERS = [
+  { key: 'cover', title: '表紙' },
+  { key: 'overview', title: '①建物全体把握・全景' },
+  { key: 'condition', title: '②対象部位の状況' },
+  { key: 'water_test', title: '散水調査' },
+  { key: 'cause', title: '③原因特定' },
+  { key: 'measures', title: '④必要な対策' },
+  { key: 'proposal', title: '⑤修繕・工事提案' },
+  { key: 'schedule', title: '工事日数・特記事項' },
+  { key: 'company', title: '会社案内' },
+] as const;
+
+// Default chapters for 完了報告書
+export const COMPLETION_REPORT_CHAPTERS = [
+  { key: 'cover', title: '表紙' },
+  { key: 'before', title: '施工前の状況' },
+  { key: 'work', title: '施工内容' },
+  { key: 'after', title: '施工後の状況' },
+  { key: 'detail', title: '施工詳細' },
+  { key: 'warranty', title: '保証・メンテナンス' },
+  { key: 'company', title: '会社案内' },
+] as const;
 
 // Navigation items
 export const NAV_ITEMS = [
