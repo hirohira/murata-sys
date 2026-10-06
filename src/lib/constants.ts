@@ -81,8 +81,12 @@ export const REPORT_STYLES: { value: ReportStyle; label: string; description: st
 ];
 
 // ─── 章立てテンプレート ───────────────────────────
+// 2026/9/29 打合せ議事録の方針:
+//   ・報告書は「全体 → 対象部位 → 現況 → 原因 → 対策・提案」の顧客目線ストーリーを基本とする
+//   ・調査報告書と完了報告書は基本的な考え方・様式を統一する
+//   ・建物カテゴリー（住宅・工場・店舗）ごとにストーリー・提案内容を持たせる
 // 章タイトルには番号を付けない（出力時に①②…を自動採番する）
-// ※ 工事種別ごとの章立ては仮案。MURATA様に確認のうえ差し替える。
+// ※ カテゴリーごとの差分は仮案。MURATA様の社内すり合わせ結果で差し替える。
 export interface ChapterTemplate {
   key: string;
   title: string;
@@ -90,147 +94,67 @@ export interface ChapterTemplate {
 
 const COVER: ChapterTemplate = { key: 'cover', title: '表紙' };
 const COMPANY: ChapterTemplate = { key: 'company', title: '会社案内' };
-const SCHEDULE: ChapterTemplate = { key: 'schedule', title: '工事日数・特記事項' };
-const WARRANTY: ChapterTemplate = { key: 'warranty', title: '保証・メンテナンス' };
-const BEFORE: ChapterTemplate = { key: 'before', title: '施工前の状況' };
-const AFTER: ChapterTemplate = { key: 'after', title: '施工後の状況' };
 
-// 調査報告書（工事種別ごと）
-export const SURVEY_CHAPTER_TEMPLATES: Record<ConstructionType, ChapterTemplate[]> = {
-  '雨漏り調査': [
+// カテゴリーごとの「全体把握」章と、追加する配慮事項の章
+const CATEGORY_VARIANTS: Record<
+  BuildingType,
+  { overview: string; consideration: ChapterTemplate }
+> = {
+  '住宅': {
+    overview: '建物・周辺全体の把握',
+    consideration: { key: 'consideration', title: '工事中の生活への影響・ご注意事項' },
+  },
+  '工場': {
+    overview: '工場・敷地全体の把握',
+    consideration: { key: 'consideration', title: '操業への影響・安全対策' },
+  },
+  '店舗': {
+    overview: '店舗・建物全体の把握',
+    consideration: { key: 'consideration', title: '営業への影響・工事時間帯' },
+  },
+};
+
+function surveyTemplate(building: BuildingType, construction: ConstructionType | null): ChapterTemplate[] {
+  const v = CATEGORY_VARIANTS[building];
+  return [
     COVER,
-    { key: 'overview', title: '建物全体把握・全景' },
-    { key: 'condition', title: '対象部位の状況' },
-    { key: 'water_test', title: '散水調査' },
-    { key: 'cause', title: '原因特定' },
+    { key: 'overview', title: v.overview },
+    { key: 'condition', title: '対象部位・不具合状況' },
+    ...(construction === '雨漏り調査' ? [{ key: 'water_test', title: '散水調査' }] : []),
+    { key: 'cause', title: '原因の特定' },
     { key: 'measures', title: '必要な対策' },
     { key: 'proposal', title: '修繕・工事提案' },
-    SCHEDULE,
+    v.consideration,
+    { key: 'schedule', title: '工事日数・特記事項' },
     COMPANY,
-  ],
-  '改修提案': [
-    COVER,
-    { key: 'overview', title: '建物概要・全景' },
-    { key: 'condition', title: '現況調査' },
-    { key: 'evaluation', title: '劣化状況の評価' },
-    { key: 'policy', title: '改修方針' },
-    { key: 'proposal', title: '改修工事のご提案' },
-    SCHEDULE,
-    COMPANY,
-  ],
-  '板金工事': [
-    COVER,
-    { key: 'overview', title: '建物全体・全景' },
-    { key: 'condition', title: '板金部の状況' },
-    { key: 'defects', title: '劣化・不具合箇所' },
-    { key: 'measures', title: '原因と対策' },
-    { key: 'proposal', title: '工事のご提案' },
-    SCHEDULE,
-    COMPANY,
-  ],
-  '屋根工事': [
-    COVER,
-    { key: 'overview', title: '建物全体・全景' },
-    { key: 'condition', title: '屋根材の状況' },
-    { key: 'details', title: '棟・谷・軒先の状況' },
-    { key: 'defects', title: '劣化・不具合箇所' },
-    { key: 'measures', title: '必要な対策' },
-    { key: 'proposal', title: '工事のご提案' },
-    SCHEDULE,
-    COMPANY,
-  ],
-  '外壁工事': [
-    COVER,
-    { key: 'overview', title: '建物全体・全景' },
-    { key: 'condition', title: '外壁材の状況' },
-    { key: 'sealing', title: 'シーリングの状況' },
-    { key: 'defects', title: 'ひび割れ・浮き等の不具合' },
-    { key: 'measures', title: '必要な対策' },
-    { key: 'proposal', title: '工事のご提案' },
-    SCHEDULE,
-    COMPANY,
-  ],
-  '防水工事': [
-    COVER,
-    { key: 'overview', title: '建物全体・全景' },
-    { key: 'condition', title: '防水層の状況' },
-    { key: 'drain', title: '排水口・ドレン廻りの状況' },
-    { key: 'defects', title: '劣化・不具合箇所' },
-    { key: 'measures', title: '必要な対策' },
-    { key: 'proposal', title: '工事のご提案' },
-    SCHEDULE,
-    COMPANY,
-  ],
-};
+  ];
+}
 
-// 完了報告書（工事種別ごと）
-const COMPLETION_DEFAULT: ChapterTemplate[] = [
-  COVER,
-  BEFORE,
-  { key: 'work', title: '施工内容' },
-  AFTER,
-  { key: 'detail', title: '施工詳細' },
-  WARRANTY,
-  COMPANY,
-];
-
-export const COMPLETION_CHAPTER_TEMPLATES: Record<ConstructionType, ChapterTemplate[]> = {
-  '雨漏り調査': [
+function completionTemplate(building: BuildingType, construction: ConstructionType | null): ChapterTemplate[] {
+  const v = CATEGORY_VARIANTS[building];
+  return [
     COVER,
-    BEFORE,
-    { key: 'work', title: '雨漏り原因と処置内容' },
-    { key: 'process', title: '施工中の様子' },
-    AFTER,
-    { key: 'water_test', title: '散水による確認' },
-    WARRANTY,
+    { key: 'overview', title: v.overview },
+    { key: 'before', title: '施工前の状況（対象部位・不具合）' },
+    { key: 'cause', title: '原因と施工方針' },
+    { key: 'work', title: '施工内容' },
+    { key: 'after', title: '施工後の状況' },
+    ...(construction === '雨漏り調査' ? [{ key: 'water_test', title: '散水による確認' }] : []),
+    { key: 'warranty', title: '保証・今後のメンテナンス' },
     COMPANY,
-  ],
-  '改修提案': COMPLETION_DEFAULT,
-  '板金工事': [
-    COVER,
-    BEFORE,
-    { key: 'work', title: '板金加工・取付' },
-    AFTER,
-    WARRANTY,
-    COMPANY,
-  ],
-  '屋根工事': [
-    COVER,
-    BEFORE,
-    { key: 'work', title: '下地・防水シート施工' },
-    { key: 'process', title: '屋根材施工' },
-    AFTER,
-    WARRANTY,
-    COMPANY,
-  ],
-  '外壁工事': [
-    COVER,
-    BEFORE,
-    { key: 'work', title: '下地補修・シーリング' },
-    { key: 'process', title: '塗装・張替え工程' },
-    AFTER,
-    WARRANTY,
-    COMPANY,
-  ],
-  '防水工事': [
-    COVER,
-    BEFORE,
-    { key: 'work', title: '下地処理' },
-    { key: 'process', title: '防水層施工' },
-    AFTER,
-    WARRANTY,
-    COMPANY,
-  ],
-};
+  ];
+}
 
 export function getChapterTemplate(
   reportType: ReportType,
+  buildingType?: BuildingType | null,
   constructionType?: ConstructionType | null
 ): ChapterTemplate[] {
-  if (reportType === '調査報告書') {
-    return SURVEY_CHAPTER_TEMPLATES[constructionType ?? '雨漏り調査'] ?? SURVEY_CHAPTER_TEMPLATES['雨漏り調査'];
-  }
-  return (constructionType && COMPLETION_CHAPTER_TEMPLATES[constructionType]) || COMPLETION_DEFAULT;
+  const building = buildingType ?? '住宅';
+  const construction = constructionType ?? null;
+  return reportType === '調査報告書'
+    ? surveyTemplate(building, construction)
+    : completionTemplate(building, construction);
 }
 
 // Navigation items

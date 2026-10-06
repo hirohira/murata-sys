@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { previewProjectId } from '@/lib/project-id';
+import { previewSiteFolderName } from '@/lib/project-id';
 import {
   CONSTRUCTION_TYPES,
   BUILDING_TYPES,
@@ -24,17 +24,16 @@ export default function NewProjectPage() {
     audience_type: '一般施主向け' as string,
   });
 
-  const previewId = useMemo(() => {
-    if (form.customer_name && form.site_name) {
-      return previewProjectId({
+  const previewFolderName = useMemo(
+    () =>
+      previewSiteFolderName({
         customerName: form.customer_name,
         siteName: form.site_name,
         constructionType: form.construction_type,
-        startDate: form.start_date || new Date().toISOString().slice(0, 7),
-      });
-    }
-    return 'MRT-XXXXXXXX01_顧客名_現場名_工事種別_YYYYMM';
-  }, [form.customer_name, form.site_name, form.construction_type, form.start_date]);
+        startDate: form.start_date,
+      }),
+    [form.customer_name, form.site_name, form.construction_type, form.start_date]
+  );
 
   const updateField = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -69,14 +68,14 @@ export default function NewProjectPage() {
     <div className="max-w-2xl mx-auto">
       <h2 className="text-lg font-bold text-gray-900 mb-5">案件登録</h2>
 
-      {/* 現場ID プレビュー */}
+      {/* 現場フォルダ名 プレビュー */}
       <div className="card mb-5">
         <div className="px-5 py-3 bg-murata-primary-light">
           <p className="text-xs font-medium text-murata-primary mb-1">
-            現場ID（自動生成）
+            現場フォルダ名（自動生成・連番XXXは登録時に確定）
           </p>
           <p className="font-mono text-sm text-murata-primary font-bold break-all">
-            {previewId}
+            {previewFolderName}
           </p>
         </div>
       </div>

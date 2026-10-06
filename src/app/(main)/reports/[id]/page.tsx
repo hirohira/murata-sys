@@ -19,6 +19,8 @@ export default function ReportDetailPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [savingDrive, setSavingDrive] = useState(false);
+  const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
   // Editable fields
@@ -56,10 +58,31 @@ export default function ReportDetailPage() {
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) throw new Error('更新に失敗しました');
-      const { data } = await res.json();
+      const { data, drive, driveError } = await res.json();
       setReport((prev) => prev ? { ...prev, ...data } : prev);
+      if (drive) setNotice(`Googleドライブに保存しました：${drive.name}`);
+      if (driveError) setError(`承認しましたが、ドライブへの保存に失敗しました：${driveError}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ステータス変更に失敗しました');
+    }
+  };
+
+  const handleSaveToDrive = async () => {
+    setSavingDrive(true);
+    setError('');
+    setNotice('');
+    try {
+      const res = await fetch(`/api/reports/${reportId}/drive`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'ドライブへの保存に失敗しました');
+      setReport((prev) =>
+        prev ? { ...prev, drive_file_id: json.data.id, drive_file_url: json.data.url } : prev
+      );
+      setNotice(`Googleドライブに保存しました：${json.data.name}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ドライブへの保存に失敗しました');
+    } finally {
+      setSavingDrive(false);
     }
   };
 
@@ -315,6 +338,21 @@ export default function ReportDetailPage() {
           {error}
         </div>
       )}
+      {notice && (
+        <div className="bg-emerald-50 text-emerald-800 text-sm px-4 py-3 rounded-lg mb-5">
+          {notice}
+          {report.drive_file_url && (
+            <a
+              href={report.drive_file_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-2 underline"
+            >
+              開く
+            </a>
+          )}
+        </div>
+      )}
 
       {/* Summary */}
       <div className="card mb-5">
@@ -538,6 +576,34 @@ export default function ReportDetailPage() {
                 </>
               )}
             </button>
+            <div className="flex flex-col sm:flex-row gap-2 mt-2">
+              <button
+                type="button"
+                onClick={handleSaveToDrive}
+                disabled={savingDrive}
+                className="flex-1 btn btn-secondary"
+              >
+                {savingDrive
+                  ? 'ドライブに保存中...'
+                  : report.drive_file_id
+                    ? 'Googleドライブの保存版を更新'
+                    : 'Googleドライブに保存'}
+              </button>
+              {report.drive_file_url && (
+                <a
+                  href={report.drive_file_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 btn btn-secondary text-center"
+                >
+                  ドライブの保存版を開く
+                </a>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              {report.report_type === '調査報告書' ? '03_現場調査' : '11_完了・引渡し'}
+              フォルダに保存されます。承認すると自動で保存されます。
+            </p>
           </div>
         </div>
       )}

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import WizardStepper from '@/components/reports/WizardStepper';
 import ChapterEditor from '@/components/reports/ChapterEditor';
+import DrivePhotoPicker from '@/components/reports/DrivePhotoPicker';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import type {
   Project,
@@ -17,6 +18,7 @@ import type {
   ReportMeta,
   PhotoTag,
   ConstructionType,
+  BuildingType,
 } from '@/types';
 import { hasChapterContent } from '@/lib/chapter-numbering';
 import {
@@ -55,9 +57,10 @@ function genId() {
 
 function createDefaultChapters(
   reportType: ReportType,
+  buildingType?: BuildingType | null,
   constructionType?: ConstructionType | null
 ): ReportChapter[] {
-  const templates = getChapterTemplate(reportType, constructionType);
+  const templates = getChapterTemplate(reportType, buildingType, constructionType);
 
   return templates.map((t, i) => ({
     id: genId(),
@@ -129,6 +132,7 @@ function NewReportWizard() {
 
   const selectedProject = projects.find((p) => p.id === projectId);
   const constructionType = selectedProject?.construction_type ?? null;
+  const buildingType = selectedProject?.building_type ?? null;
 
   // 章立てを手で編集した（追加・削除・名前変更・並べ替え）か
   const chaptersEditedRef = useRef(false);
@@ -138,10 +142,10 @@ function NewReportWizard() {
   useEffect(() => {
     setChapters((prev) => {
       if (chaptersEditedRef.current || prev.some(hasChapterContent)) return prev;
-      return createDefaultChapters(reportType, constructionType);
+      return createDefaultChapters(reportType, buildingType, constructionType);
     });
     setActiveChapterIdx(0);
-  }, [reportType, constructionType]);
+  }, [reportType, buildingType, constructionType]);
 
   // Populate fields from selected project
   useEffect(() => {
@@ -174,6 +178,26 @@ function NewReportWizard() {
                 photos: [
                   ...ch.photos,
                   { ...newPhoto, sort_order: ch.photos.length },
+                ],
+              }
+            : ch
+        )
+      );
+    },
+    []
+  );
+
+  // ドライブから取り込んだ写真（アップロード済み）を章に追加
+  const handleAddImportedPhotos = useCallback(
+    (chapterId: string, photos: ChapterPhoto[]) => {
+      setChapters((prev) =>
+        prev.map((ch) =>
+          ch.id === chapterId
+            ? {
+                ...ch,
+                photos: [
+                  ...ch.photos,
+                  ...photos.map((p, i) => ({ ...p, sort_order: ch.photos.length + i })),
                 ],
               }
             : ch
@@ -291,9 +315,9 @@ function NewReportWizard() {
       return;
     }
     chaptersEditedRef.current = false;
-    setChapters(createDefaultChapters(reportType, constructionType));
+    setChapters(createDefaultChapters(reportType, buildingType, constructionType));
     setActiveChapterIdx(0);
-  }, [chapters, reportType, constructionType]);
+  }, [chapters, reportType, buildingType, constructionType]);
 
   // Move chapter up/down
   const moveChapter = useCallback((idx: number, direction: -1 | 1) => {
@@ -607,9 +631,11 @@ function NewReportWizard() {
           onUpdatePhotoTag={handleUpdatePhotoTag}
           onMoveChapter={moveChapter}
           onAddChapter={addChapter}
+          onAddImportedPhotos={handleAddImportedPhotos}
+          projectId={projectId}
           onRemoveChapter={removeChapter}
           onResetChapters={resetChapters}
-          templateLabel={`${reportType}・${constructionType ?? '雨漏り調査'}`}
+          templateLabel={`${reportType}・${buildingType ?? '住宅'}${constructionType === '雨漏り調査' ? '・雨漏り' : ''}`}
           isCompletionReport={reportType === '完了報告書'}
         />
       )}
@@ -955,6 +981,8 @@ function Step3Chapters({
   onUpdatePhotoTag,
   onMoveChapter,
   onAddChapter,
+  onAddImportedPhotos,
+  projectId,
   onRemoveChapter,
   onResetChapters,
   templateLabel,
@@ -970,12 +998,15 @@ function Step3Chapters({
   onUpdatePhotoTag: (chapterId: string, photoId: string, tag: PhotoTag) => void;
   onMoveChapter: (idx: number, direction: -1 | 1) => void;
   onAddChapter: () => void;
+  onAddImportedPhotos: (chapterId: string, photos: ChapterPhoto[]) => void;
+  projectId: string;
   onRemoveChapter: (idx: number) => void;
   onResetChapters: () => void;
   templateLabel: string;
   isCompletionReport: boolean;
 }) {
   const activeChapter = chapters[activeChapterIdx];
+  const [drivePickerOpen, setDrivePickerOpen] = useState(false);
 
   return (
     <div className="flex flex-col lg:flex-row gap-4">
@@ -1152,8 +1183,17 @@ function Step3Chapters({
                 onRemovePhoto={onRemovePhoto}
                 onUpdatePhotoCaption={onUpdatePhotoCaption}
                 onUpdatePhotoTag={onUpdatePhotoTag}
+                onOpenDrivePicker={projectId ? () => setDrivePickerOpen(true) : undefined}
                 isCompletionReport={isCompletionReport}
               />
+              {drivePickerOpen && (
+                <DrivePhotoPicker
+                  projectId={projectId}
+                  chapterTitle={activeChapter.title}
+                  onClose={() => setDrivePickerOpen(false)}
+                  onImported={(photos) => onAddImportedPhotos(activeChapter.id, photos)}
+                />
+              )}
             </div>
           </div>
         )}

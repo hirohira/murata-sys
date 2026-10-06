@@ -11,6 +11,7 @@ interface Props {
   onRemovePhoto: (chapterId: string, photoId: string) => void;
   onUpdatePhotoCaption: (chapterId: string, photoId: string, caption: string) => void;
   onUpdatePhotoTag?: (chapterId: string, photoId: string, tag: PhotoTag) => void;
+  onOpenDrivePicker?: () => void;
   isCompletionReport?: boolean;
 }
 
@@ -21,6 +22,7 @@ export default function ChapterEditor({
   onRemovePhoto,
   onUpdatePhotoCaption,
   onUpdatePhotoTag,
+  onOpenDrivePicker,
   isCompletionReport,
 }: Props) {
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -115,6 +117,18 @@ export default function ChapterEditor({
             </svg>
             選択
           </button>
+          {onOpenDrivePicker && (
+            <button
+              type="button"
+              onClick={onOpenDrivePicker}
+              className="flex-1 flex items-center justify-center gap-2 bg-white border-2 border-gray-300 text-gray-700 py-3 px-3 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors active:scale-[0.98]"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+              </svg>
+              ドライブ
+            </button>
+          )}
         </div>
 
         {/* Hidden file inputs */}

@@ -1,5 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { generateProjectId } from '@/lib/project-id';
+import { nextProjectId, jstParts } from '@/lib/project-id';
+import { ensureProjectDriveFolder } from '@/lib/project-drive';
+import { isDriveConfigured } from '@/lib/google-drive';
 import { NextResponse } from 'next/server';
 
 // GET /api/projects — 案件一覧取得
@@ -50,74 +52,61 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
   }
 
-  // Generate project ID: count today's projects for sequence number
-  const today = new Date();
-  const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  // 現場ID: {登録年}-{年内連番3桁}（例: 2026-001）
+  const { year } = jstParts();
+  const record = {
+    customer_name: body.customer_name,
+    site_name: body.site_name,
+    construction_type: body.construction_type,
+    building_type: body.building_type,
+    address: body.address || null,
+    start_date: body.start_date || null,
+    status: body.status || '調査中',
+    audience_type: body.audience_type || '一般施主向け',
+    created_by: user.id,
+  };
 
-  const { count } = await supabase
-    .from('projects')
-    .select('*', { count: 'exact', head: true })
-    .gte('created_at', `${dateStr}T00:00:00`)
-    .lt('created_at', `${dateStr}T23:59:59`);
+  // 同時登録で連番が重なった場合に備えて数回やり直す
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: existing, error: listError } = await supabase
+      .from('projects')
+      .select('project_id')
+      .like('project_id', `${year}-%`);
 
-  const sequenceNumber = (count || 0) + 1;
-
-  const projectId = generateProjectId({
-    customerName: body.customer_name,
-    siteName: body.site_name,
-    constructionType: body.construction_type,
-    startDate: body.start_date || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`,
-    sequenceNumber,
-    createdDate: today,
-  });
-
-  const { data, error } = await supabase
-    .from('projects')
-    .insert({
-      project_id: projectId,
-      customer_name: body.customer_name,
-      site_name: body.site_name,
-      construction_type: body.construction_type,
-      building_type: body.building_type,
-      address: body.address || null,
-      start_date: body.start_date || null,
-      status: body.status || '調査中',
-      audience_type: body.audience_type || '一般施主向け',
-      created_by: user.id,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    // If unique constraint violation on project_id, retry with next sequence
-    if (error.code === '23505') {
-      const retryId = generateProjectId({
-        customerName: body.customer_name,
-        siteName: body.site_name,
-        constructionType: body.construction_type,
-        startDate: body.start_date || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`,
-        sequenceNumber: sequenceNumber + 1,
-        createdDate: today,
-      });
-
-      const { data: retryData, error: retryError } = await supabase
-        .from('projects')
-        .insert({
-          ...body,
-          project_id: retryId,
-          created_by: user.id,
-        })
-        .select()
-        .single();
-
-      if (retryError) {
-        return NextResponse.json({ error: retryError.message }, { status: 500 });
-      }
-      return NextResponse.json({ data: retryData }, { status: 201 });
+    if (listError) {
+      return NextResponse.json({ error: listError.message }, { status: 500 });
     }
 
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const projectId = nextProjectId((existing || []).map((r) => r.project_id), year);
+
+    const { data, error } = await supabase
+      .from('projects')
+      .insert({ ...record, project_id: projectId })
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === '23505') continue; // 現場IDの重複 → 採番し直し
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Googleドライブに現場フォルダを作成（失敗しても案件登録は成功扱い）
+    let driveError: string | null = null;
+    if (isDriveConfigured()) {
+      try {
+        const folder = await ensureProjectDriveFolder(supabase, data);
+        Object.assign(data, { drive_folder_id: folder.id, drive_folder_url: folder.url });
+      } catch (err) {
+        console.error('Drive folder creation failed:', err);
+        driveError = err instanceof Error ? err.message : 'フォルダ作成に失敗しました';
+      }
+    }
+
+    return NextResponse.json({ data, driveError }, { status: 201 });
   }
 
-  return NextResponse.json({ data }, { status: 201 });
+  return NextResponse.json(
+    { error: '現場IDの採番に失敗しました。もう一度お試しください' },
+    { status: 500 }
+  );
 }

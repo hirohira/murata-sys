@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { isDriveConfigured } from '@/lib/google-drive';
+import { saveReportToDrive } from '@/lib/project-drive';
+
+export const maxDuration = 60;
 
 // GET /api/reports/[id] — 報告書詳細
 export async function GET(
@@ -54,7 +58,21 @@ export async function PATCH(
 
     if (error) throw error;
 
-    return NextResponse.json({ data });
+    // 承認されたらGoogleドライブの現場フォルダへ自動保存（失敗しても承認自体は成功扱い）
+    let drive: { url: string; name: string } | null = null;
+    let driveError: string | null = null;
+    if (body.status === '承認済み' && isDriveConfigured()) {
+      try {
+        const file = await saveReportToDrive(supabase, params.id);
+        drive = { url: file.url, name: file.name };
+        Object.assign(data, { drive_file_id: file.id, drive_file_url: file.url });
+      } catch (err) {
+        console.error('Auto drive save failed:', err);
+        driveError = err instanceof Error ? err.message : 'ドライブへの保存に失敗しました';
+      }
+    }
+
+    return NextResponse.json({ data, drive, driveError });
   } catch (err) {
     console.error('Report PATCH error:', err);
     return NextResponse.json(

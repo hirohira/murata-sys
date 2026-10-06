@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import ProjectStatusBadge from '@/components/projects/ProjectStatusBadge';
+import DriveFolderButton from '@/components/projects/DriveFolderButton';
 import type { Project, DailyReport, ProjectStatus } from '@/types';
 
 type Tab = 'overview' | 'reports' | 'photos';
@@ -82,10 +83,21 @@ export default function ProjectDetailPage() {
             <ProjectStatusBadge status={project.status as ProjectStatus} />
           </div>
           <p className="font-mono text-xs text-gray-500">
-            {project.project_id}
+            現場ID {project.project_id}
+            {project.legacy_project_id && (
+              <span className="ml-2 text-gray-400">（旧ID {project.legacy_project_id}）</span>
+            )}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-start gap-2">
+          <DriveFolderButton
+            project={project}
+            onCreated={(folder) =>
+              setProject((prev) =>
+                prev ? { ...prev, drive_folder_id: folder.id, drive_folder_url: folder.url } : prev
+              )
+            }
+          />
           <Link
             href={`/daily-reports/new?projectId=${project.id}`}
             className="btn btn-primary btn-sm"

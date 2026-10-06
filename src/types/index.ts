@@ -43,7 +43,7 @@ export interface User {
 
 export interface Project {
   id: string;
-  project_id: string; // MRT-{YYYYMMDD}{seq}_{customer}_{site}_{type}_{start}
+  project_id: string; // 現場ID {登録年}-{連番3桁} 例: 2026-001
   customer_name: string;
   site_name: string;
   construction_type: ConstructionType;
@@ -52,6 +52,9 @@ export interface Project {
   start_date: string | null;
   status: ProjectStatus;
   audience_type: AudienceType;
+  drive_folder_id?: string | null;
+  drive_folder_url?: string | null;
+  legacy_project_id?: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -142,6 +145,9 @@ export interface Report {
   recommendation: string | null;
   generated_by_ai: boolean;
   status: ReportStatus;
+  drive_file_id?: string | null;
+  drive_file_url?: string | null;
+  drive_saved_at?: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
