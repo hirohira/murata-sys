@@ -22,7 +22,13 @@ export async function GET(
       );
     }
 
-    const pptxBuffer = await buildReportPptx(report as Report);
+    let worker: string | null = null;
+    if (report.created_by) {
+      const { data: user } = await supabase.from('users').select('name').eq('id', report.created_by).single();
+      worker = user?.name ?? null;
+    }
+
+    const pptxBuffer = await buildReportPptx(report as Report, { worker });
 
     return new NextResponse(pptxBuffer as unknown as BodyInit, {
       headers: {

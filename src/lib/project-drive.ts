@@ -64,7 +64,7 @@ export async function saveReportToDrive(
     ext: 'pptx',
   });
 
-  const data = await buildReportPptx(r);
+  const data = await buildReportPptx(r, { worker });
   const file = await uploadFile({
     parentId: targetFolderId,
     name,

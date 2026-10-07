@@ -1,242 +1,133 @@
 // 報告書PowerPoint（茂様式）の生成
+// ページの中身は report-pages.ts で組み立て、ここでは図形として書き出すだけ（プレビューと同じ配置）
 import type { Report } from '@/types';
-import { getOutputChapters } from '@/lib/chapter-numbering';
-import {
-  layoutChapterSlide,
-  TITLE_BOX,
-  TITLE_RULE,
-  CAPTION_FONT,
-  DESC_LINE_SPACING,
-} from '@/lib/slide-layout';
+import { buildReportPages, type Element } from '@/lib/report-pages';
+import { REPORT_ASSET_DATA } from '@/lib/report-assets';
 
-export async function buildReportPptx(report: Report): Promise<Buffer> {
-  // Dynamic import pptxgenjs (server-side)
+const FONT_BODY = 'メイリオ';
+const FONT_ROUNDED = 'HG丸ｺﾞｼｯｸM-PRO';
+
+export async function buildReportPptx(report: Report, opts: { worker?: string | null } = {}): Promise<Buffer> {
   const PptxGenJS = (await import('pptxgenjs')).default;
   const pptx = new PptxGenJS();
-
-  // Configure presentation
   pptx.layout = 'LAYOUT_4x3';
   pptx.author = '株式会社MURATA';
   pptx.company = '株式会社MURATA';
   pptx.title = report.title;
 
-  // Define colors
-  const PRIMARY = '1B4F72';
-  const ACCENT = 'D32F2F';
+  const pages = buildReportPages(report, { worker: opts.worker });
 
-  // ─── Cover slide ───
-  const coverSlide = pptx.addSlide();
-  addMurataFooter(coverSlide, 1);
+  // 写真は同じURLを何度も取得しないようにキャッシュ
+  const cache = new Map<string, Promise<LoadedImage | null>>();
+  const getImage = (url: string) => {
+    if (!cache.has(url)) cache.set(url, loadImage(url));
+    return cache.get(url)!;
+  };
 
-  coverSlide.addText(report.report_type, {
-    x: 1.0,
-    y: 1.2,
-    w: 8.0,
-    h: 0.4,
-    fontSize: 11,
-    color: '888888',
-    align: 'center',
-    fontFace: 'Noto Sans JP',
-  });
-
-  coverSlide.addText(report.title, {
-    x: 1.0,
-    y: 1.7,
-    w: 8.0,
-    h: 0.8,
-    fontSize: 22,
-    bold: true,
-    color: '222222',
-    align: 'center',
-    fontFace: 'Noto Sans JP',
-  });
-
-  // Red line under title
-  coverSlide.addShape(pptx.ShapeType.rect, {
-    x: 2.5,
-    y: 2.6,
-    w: 5.0,
-    h: 0.03,
-    fill: { color: ACCENT },
-  });
-
-  // Customer / info
-  const meta = report.meta as Report['meta'];
-  const infoLines: string[] = [];
-  if (report.project?.customer_name) infoLines.push(`${report.project.customer_name} 様`);
-  if (meta?.construction_name) infoLines.push(meta.construction_name);
-  if (meta?.survey_date) infoLines.push(`調査日: ${meta.survey_date}`);
-  infoLines.push(`作成日: ${new Date(report.created_at).toLocaleDateString('ja-JP')}`);
-
-  coverSlide.addText(infoLines.join('\n'), {
-    x: 1.0,
-    y: 3.0,
-    w: 8.0,
-    h: 1.5,
-    fontSize: 11,
-    color: '555555',
-    align: 'center',
-    fontFace: 'Noto Sans JP',
-    lineSpacing: 24,
-  });
-
-  // Company name at bottom
-  coverSlide.addText('株式会社MURATA', {
-    x: 1.0,
-    y: 5.8,
-    w: 8.0,
-    h: 0.5,
-    fontSize: 14,
-    bold: true,
-    color: PRIMARY,
-    align: 'center',
-    fontFace: 'Noto Sans JP',
-  });
-
-  // ─── Chapter slides ───
-  let slideNum = 2;
-
-  for (const { chapter: ch, displayTitle } of getOutputChapters(report.chapters)) {
-
+  for (const page of pages) {
     const slide = pptx.addSlide();
-    addMurataFooter(slide, slideNum);
-    slideNum++;
-
-    // 章見出し＋赤線
-    slide.addText(displayTitle, {
-      ...TITLE_BOX,
-      fontSize: 16,
-      bold: true,
-      color: '222222',
-      align: 'center',
-      valign: 'middle',
-      fontFace: 'Noto Sans JP',
-    });
-    slide.addShape(pptx.ShapeType.rect, { ...TITLE_RULE, fill: { color: ACCENT }, line: { color: ACCENT } });
-
-    // 写真・説明文の配置はプレビューと共通の計算（3枚までは横1列、説明文は枠内に収める）
-    const layout = layoutChapterSlide(ch.photos || [], ch.description || '');
-
-    for (const label of layout.labels) {
-      slide.addText(label.text, {
-        ...label.box,
-        fontSize: 10,
-        bold: true,
-        color: label.color,
-        align: 'center',
-        valign: 'middle',
-        fontFace: 'Noto Sans JP',
-      });
-    }
-
-    for (const { photo, box, caption } of layout.photos) {
-      const img = photo.url ? await loadImage(photo.url) : null;
-      if (img) {
-        // 元画像の縦横比を渡し、枠いっぱいにトリミング（引き伸ばさない）
-        const scale = Math.max(box.w / img.width, box.h / img.height);
-        slide.addImage({
-          data: img.data,
-          x: box.x,
-          y: box.y,
-          w: img.width * scale,
-          h: img.height * scale,
-          sizing: { type: 'cover', w: box.w, h: box.h },
-        });
-      }
-      if (caption) {
-        slide.addText(caption.text, {
-          ...caption.box,
-          fontSize: CAPTION_FONT,
-          color: '666666',
-          align: 'center',
-          valign: 'top',
-          fontFace: 'Noto Sans JP',
-          margin: 0,
-          fit: 'shrink',
-        });
-      }
-    }
-
-    if (layout.hiddenCount > 0) {
-      slide.addText(`ほか${layout.hiddenCount}枚`, {
-        x: 7.5, y: 0.66, w: 2.0, h: 0.14,
-        fontSize: 8, color: '888888', align: 'right', fontFace: 'Noto Sans JP', margin: 0,
-      });
-    }
-
-    if (layout.description) {
-      const d = layout.description;
-      slide.addText(d.text, {
-        ...d.box,
-        fontSize: d.fontSize,
-        color: '333333',
-        fontFace: 'Noto Sans JP',
-        lineSpacing: d.fontSize * DESC_LINE_SPACING, // 行間はpt指定（倍率指定だとフォント依存で広がる）
-        valign: 'top',
-        margin: 0,
-      });
+    for (const el of page.elements) {
+      await drawElement(pptx, slide, el, getImage);
     }
   }
 
-  // Generate PPTX buffer
-  const pptxOutput = await pptx.write({ outputType: 'nodebuffer' });
-  const pptxBuffer = Buffer.from(pptxOutput as ArrayBuffer);
-
-  return pptxBuffer;
+  const out = await pptx.write({ outputType: 'nodebuffer' });
+  return Buffer.from(out as ArrayBuffer);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function addMurataFooter(slide: any, pageNum: number) {
-  // Red line at bottom
-  slide.addShape('rect', {
-    x: 0,
-    y: 7.15,
-    w: 10.0,
-    h: 0.03,
-    fill: { color: 'D32F2F' },
-  });
+async function drawElement(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pptx: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  slide: any,
+  el: Element,
+  getImage: (url: string) => Promise<LoadedImage | null>
+) {
+  switch (el.kind) {
+    case 'asset':
+      slide.addImage({ data: REPORT_ASSET_DATA[el.asset], ...el.box });
+      return;
 
-  // Company name (left)
-  slide.addText('株式会社MURATA', {
-    x: 0.3,
-    y: 7.2,
-    w: 3.0,
-    h: 0.3,
-    fontSize: 9,
-    bold: true,
-    color: '1B4F72',
-    fontFace: 'Noto Sans JP',
-    align: 'left',
-  });
+    case 'line':
+      slide.addShape(pptx.ShapeType.line, {
+        x: el.box.x,
+        y: el.box.y,
+        w: el.box.w,
+        h: 0,
+        line: { color: el.color, width: el.widthPt },
+      });
+      return;
 
-  // Page number (center)
-  slide.addText(String(pageNum), {
-    x: 4.0,
-    y: 7.2,
-    w: 2.0,
-    h: 0.3,
-    fontSize: 10,
-    color: 'AAAAAA',
-    fontFace: 'Inter',
-    align: 'center',
-  });
+    case 'photo': {
+      const url = el.photo.url;
+      const img = url ? await getImage(url) : null;
+      if (img) {
+        // 元画像の縦横比を保ったまま枠いっぱいにトリミング（引き伸ばさない）
+        const scale = Math.max(el.box.w / img.width, el.box.h / img.height);
+        slide.addImage({
+          data: img.data,
+          x: el.box.x,
+          y: el.box.y,
+          w: img.width * scale,
+          h: img.height * scale,
+          sizing: { type: 'cover', w: el.box.w, h: el.box.h },
+        });
+      } else {
+        slide.addShape(pptx.ShapeType.rect, { ...el.box, fill: { color: 'EEEEEE' }, line: { color: 'DDDDDD' } });
+      }
+      if (el.badge) {
+        slide.addText(el.badge.text, {
+          x: el.box.x + 0.06,
+          y: el.box.y + 0.06,
+          w: 0.7,
+          h: 0.24,
+          fontSize: 9,
+          bold: true,
+          color: 'FFFFFF',
+          fill: { color: el.badge.color },
+          align: 'center',
+          valign: 'middle',
+          fontFace: FONT_BODY,
+          margin: 0,
+        });
+      }
+      return;
+    }
 
-  // URL (right)
-  slide.addText('murata-reform.jp', {
-    x: 6.5,
-    y: 7.2,
-    w: 3.2,
-    h: 0.3,
-    fontSize: 8,
-    bold: true,
-    color: '1976D2',
-    fontFace: 'Inter',
-    align: 'right',
-  });
+    case 'text': {
+      const lineSpacing = el.fontSize * el.lineSpacing; // pt指定（倍率指定はフォント依存で広がるため）
+      const runs = el.paragraphs.map((p, i) => ({
+        text: p.text,
+        options: {
+          bold: p.bold ?? el.bold,
+          color: p.color ?? el.color,
+          breakLine: i < el.paragraphs.length - 1,
+        },
+      }));
+      slide.addText(runs, {
+        ...el.box,
+        fontSize: el.fontSize,
+        fontFace: el.font === 'rounded' ? FONT_ROUNDED : FONT_BODY,
+        color: el.color,
+        bold: el.bold,
+        underline: el.underline ? { style: 'sng' } : undefined,
+        align: el.align,
+        valign: el.valign,
+        lineSpacing,
+        margin: 0,
+      });
+      return;
+    }
+  }
 }
 
-/** 画像を取得して data URI と縦横のピクセル数を返す（失敗時は null） */
-async function loadImage(url: string): Promise<{ data: string; width: number; height: number } | null> {
+interface LoadedImage {
+  data: string;
+  width: number;
+  height: number;
+}
+
+async function loadImage(url: string): Promise<LoadedImage | null> {
   try {
     const res = await fetch(url);
     if (!res.ok) return null;

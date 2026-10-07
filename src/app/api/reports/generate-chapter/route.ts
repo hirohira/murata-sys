@@ -65,6 +65,17 @@ ${CATEGORY_GUIDE[project.building_type] ?? ''}`;
       ? `\n写真キャプション:\n${photo_captions.map((c: string, i: number) => `${i + 1}. ${c}`).join('\n')}`
       : '（写真キャプションなし）';
 
+    // 実物の調査報告書に合わせた長さ（写真ページは1項目が半ページなので1〜2文）
+    const isWorkDescription = ['proposal', 'work', 'warranty'].includes(chapter_key);
+    const LENGTH_GUIDE = isWorkDescription
+      ? `工事内容を、施主が読んで分かるように箇条書き（「・」で始める）を含めて3〜6行、合計200字以内で書いてください。
+例：
+工事内容として
+・写真範囲箇所の外壁ジョイント及びクラック箇所のシーリング処理を行います。
+シーリング色は外壁の近似色を使用するため多少の色の違いがございます。ご了承ください。`
+      : `写真の下に添える一言コメントとして、1〜2文・合計70字以内で書いてください。
+例：「天井・壁面から雨漏りがする状況です。」「二階出窓のシーリングが切れておりその箇所から雨水が侵入しているのが漏水の原因です。」`;
+
     const userPrompt = `以下の情報から「${chapter_title}」の章の説明文を生成してください。
 
 【現場情報】
@@ -78,11 +89,13 @@ ${captionsText}
 
 ${audience_type === '一般施主向け' ? '一般の施主にもわかりやすい表現で書いてください。専門用語には補足を添えてください。' : '建築の専門家向けに、技術用語を適切に使い簡潔に記述してください。'}
 
-3〜5文程度で、この章に適した説明文のみを返してください。JSON等は不要です。`;
+${LENGTH_GUIDE}
+
+説明文のみを返してください。見出し・JSON・前置きは不要です。`;
 
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
+      max_tokens: 512,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     });

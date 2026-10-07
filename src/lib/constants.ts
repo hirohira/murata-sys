@@ -87,6 +87,7 @@ export const REPORT_STYLES: { value: ReportStyle; label: string; description: st
 //   ・建物カテゴリー（住宅・工場・店舗）ごとにストーリー・提案内容を持たせる
 // 章タイトルには番号を付けない（出力時に①②…を自動採番する）
 // ※ カテゴリーごとの差分は仮案。MURATA様の社内すり合わせ結果で差し替える。
+// 調査報告書は実物（グラスセゾン）に合わせ、最後の2ページ「工事日数・特記事項」「会社案内」を常に出力する。
 export interface ChapterTemplate {
   key: string;
   title: string;
@@ -95,46 +96,34 @@ export interface ChapterTemplate {
 const COVER: ChapterTemplate = { key: 'cover', title: '表紙' };
 const COMPANY: ChapterTemplate = { key: 'company', title: '会社案内' };
 
-// カテゴリーごとの「全体把握」章と、追加する配慮事項の章
-const CATEGORY_VARIANTS: Record<
-  BuildingType,
-  { overview: string; consideration: ChapterTemplate }
-> = {
-  '住宅': {
-    overview: '建物・周辺全体の把握',
-    consideration: { key: 'consideration', title: '工事中の生活への影響・ご注意事項' },
-  },
-  '工場': {
-    overview: '工場・敷地全体の把握',
-    consideration: { key: 'consideration', title: '操業への影響・安全対策' },
-  },
-  '店舗': {
-    overview: '店舗・建物全体の把握',
-    consideration: { key: 'consideration', title: '営業への影響・工事時間帯' },
-  },
+// カテゴリーごとの「全体把握」章のタイトル
+const OVERVIEW_TITLE: Record<BuildingType, string> = {
+  '住宅': '建物・周辺全体の把握',
+  '工場': '工場・敷地全体の把握',
+  '店舗': '店舗・建物全体の把握',
 };
 
+// 調査報告書の最後の2ページ（常に出力する）
+const SCHEDULE: ChapterTemplate = { key: 'schedule', title: '工事日数・特記事項' };
+
 function surveyTemplate(building: BuildingType, construction: ConstructionType | null): ChapterTemplate[] {
-  const v = CATEGORY_VARIANTS[building];
   return [
     COVER,
-    { key: 'overview', title: v.overview },
+    { key: 'overview', title: OVERVIEW_TITLE[building] },
     { key: 'condition', title: '対象部位・不具合状況' },
     ...(construction === '雨漏り調査' ? [{ key: 'water_test', title: '散水調査' }] : []),
     { key: 'cause', title: '原因の特定' },
     { key: 'measures', title: '必要な対策' },
     { key: 'proposal', title: '修繕・工事提案' },
-    v.consideration,
-    { key: 'schedule', title: '工事日数・特記事項' },
+    SCHEDULE,
     COMPANY,
   ];
 }
 
 function completionTemplate(building: BuildingType, construction: ConstructionType | null): ChapterTemplate[] {
-  const v = CATEGORY_VARIANTS[building];
   return [
     COVER,
-    { key: 'overview', title: v.overview },
+    { key: 'overview', title: OVERVIEW_TITLE[building] },
     { key: 'before', title: '施工前の状況（対象部位・不具合）' },
     { key: 'cause', title: '原因と施工方針' },
     { key: 'work', title: '施工内容' },
@@ -156,6 +145,58 @@ export function getChapterTemplate(
     ? surveyTemplate(building, construction)
     : completionTemplate(building, construction);
 }
+
+// ─── 報告書の固定ページの内容（実物の調査報告書より） ───
+export const MURATA_COMPANY = {
+  name: '株式会社MURATA',
+  nameWide: '株式会社ＭＵＲＡＴＡ',
+  slogan: '従業員の安心と安全と健康を第一に考え地域社会に貢献する企業',
+  headOffice: { zip: '〒310-0841', address: '茨城県水戸市酒門町4242番地', tel: '029-246-5557', fax: '029-246-5558' },
+  contractorLine: '会社名：株式会社MURATA　住所：茨城県水戸市酒門町4242　TEL：029-246-5557',
+  mitoOffice: {
+    zip: '〒310-0851',
+    address: '茨城県水戸市千波町2498-1',
+    divisions: [
+      { name: '雨漏りDr.事業部', tel: '029-305-6008' },
+      { name: 'リフォームDr.事業部', tel: '029-305-6004' },
+    ],
+  },
+  services: [
+    '雨漏り修理',
+    '暑さ対策リフレクティックス遮熱工事',
+    '屋根工事・外壁工事',
+    '無人航空機ドローンによる雨漏り調査',
+    '防水・シーリング工事',
+    'ロープアクセス工事',
+    'トータルリフォーム工事',
+    '健康経営優良法人',
+    '太陽光発電システム設置工事',
+    '屋根、外壁塗装工事',
+    'スチールアーチ（車庫、倉庫）',
+  ],
+  qrCodes: [
+    { asset: 'qrAmamoriDr', label: '雨漏りDr.茨城\nHP' },
+    { asset: 'qrFactory', label: '工場・倉庫\n改修工事 HP' },
+    { asset: 'qrSteelArch', label: 'スチールアーチ\nHP' },
+  ],
+} as const;
+
+/** 特記事項の定型文（red: true は赤字） */
+export const STANDARD_SPECIAL_NOTES: { text: string; red?: boolean }[] = [
+  { text: '電気、水道が必要な場合は無償ご貸与頂けますようお願い申し上げます。' },
+  { text: 'ほこりや音が出る作業な為、必要であれば近隣の方に工事のご連絡をお願い致します。' },
+  { text: '作業員のトイレは御社を貸して頂ければ幸いですが、状況により近隣コンビニなどを使用致します。' },
+  { text: '工事決定の際は請負契約書を結ばさせて頂きます。' },
+  { text: '調査報告書を基に他社による施工に関して、責任は負いかねます。ご了承ください。' },
+  { text: 'この報告書はなくさず保管をお願い致します。' },
+  { text: '雨漏りの原因が工事ヵ所と異なる場合や結露、自然災害などは保証対象外とさせて頂きます。ご了承ください。', red: true },
+  {
+    text: '現状、経年劣化や納まりなどの不具合により他の部分から雨水が浸入し、同じ所から雨漏りする可能性もあります。その為、雨漏りが発生した場合は再調査をさせて頂きます。ご了承ください。',
+    red: true,
+  },
+];
+
+export const DEFAULT_WORK_HOURS = '8：30～17：00';
 
 // Navigation items
 export const NAV_ITEMS = [

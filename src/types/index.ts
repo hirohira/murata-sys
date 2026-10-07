@@ -131,6 +131,12 @@ export interface ReportMeta {
   addressee?: string;
   construction_name?: string;
   purpose?: string;
+  // 「工事日数・特記事項」ページ用
+  estimate_no?: string;   // 見積番号
+  work_days?: string;     // 工事日数（例: 3日～4日）
+  work_hours?: string;    // 作業時間（例: 8：30～17：00）
+  staff_name?: string;    // 担当者
+  staff_tel?: string;     // 担当者TEL
 }
 
 export interface Report {

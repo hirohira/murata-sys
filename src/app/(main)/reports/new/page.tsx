@@ -23,6 +23,7 @@ import type {
 import { hasChapterContent } from '@/lib/chapter-numbering';
 import {
   getChapterTemplate,
+  DEFAULT_WORK_HOURS,
   AUDIENCE_TYPES,
   BUILDING_TYPES,
 } from '@/lib/constants';
@@ -100,6 +101,14 @@ function NewReportWizard() {
   const [addressee, setAddressee] = useState('');
   const [constructionName, setConstructionName] = useState('');
   const [purpose, setPurpose] = useState('');
+  // 「工事日数・特記事項」ページ（調査報告書）
+  const [scheduleInfo, setScheduleInfo] = useState<ScheduleInfo>({
+    estimate_no: '',
+    work_days: '',
+    work_hours: DEFAULT_WORK_HOURS,
+    staff_name: '',
+    staff_tel: '',
+  });
 
   // Step 3: 章立て・写真
   const [chapters, setChapters] = useState<ReportChapter[]>(() =>
@@ -508,6 +517,7 @@ function NewReportWizard() {
           path: p.path || '',
           caption: p.caption,
           sort_order: p.sort_order,
+          ...(p.tag ? { tag: p.tag } : {}),
         })),
       }));
 
@@ -518,6 +528,11 @@ function NewReportWizard() {
         addressee: addressee || undefined,
         construction_name: constructionName || undefined,
         purpose: purpose || undefined,
+        ...(reportType === '調査報告書'
+          ? Object.fromEntries(
+              Object.entries(scheduleInfo).filter(([, v]) => v.trim() !== '')
+            )
+          : {}),
       };
 
       // Build summary from chapter descriptions
@@ -614,6 +629,8 @@ function NewReportWizard() {
           setConstructionName={setConstructionName}
           purpose={purpose}
           setPurpose={setPurpose}
+          scheduleInfo={scheduleInfo}
+          setScheduleInfo={setScheduleInfo}
           reportType={reportType}
         />
       )}
@@ -824,6 +841,8 @@ function Step2BasicInfo({
   setConstructionName,
   purpose,
   setPurpose,
+  scheduleInfo,
+  setScheduleInfo,
   reportType,
 }: {
   projects: Project[];
@@ -840,6 +859,8 @@ function Step2BasicInfo({
   setConstructionName: (n: string) => void;
   purpose: string;
   setPurpose: (p: string) => void;
+  scheduleInfo: ScheduleInfo;
+  setScheduleInfo: (s: ScheduleInfo) => void;
   reportType: ReportType;
 }) {
   return (
@@ -965,8 +986,53 @@ function Step2BasicInfo({
           />
         </div>
       </div>
+
+      {/* 工事日数・特記事項（調査報告書の最後から2ページ目） */}
+      {reportType === '調査報告書' && (
+        <div className="card">
+          <div className="card-header">
+            <h3 className="font-semibold text-sm">工事日数・特記事項ページ</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              報告書の最後から2ページ目に入ります。空欄でも出力され、特記事項の定型文は自動で入ります。
+            </p>
+          </div>
+          <div className="card-body grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {(
+              [
+                { key: 'estimate_no', label: '見積番号', placeholder: '例：19901' },
+                { key: 'work_days', label: '工事日数', placeholder: '例：3日～4日' },
+                { key: 'work_hours', label: '作業時間', placeholder: '例：8：30～17：00' },
+                { key: 'staff_name', label: '担当者', placeholder: '空欄なら作成者の名前' },
+                { key: 'staff_tel', label: '担当者TEL', placeholder: '例：080-0000-0000' },
+              ] as const
+            ).map((f) => (
+              <div key={f.key}>
+                <label htmlFor={`schedule-${f.key}`} className="form-label">
+                  {f.label}
+                </label>
+                <input
+                  id={`schedule-${f.key}`}
+                  type="text"
+                  value={scheduleInfo[f.key]}
+                  onChange={(e) => setScheduleInfo({ ...scheduleInfo, [f.key]: e.target.value })}
+                  placeholder={f.placeholder}
+                  className="form-input"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+interface ScheduleInfo {
+  estimate_no: string;
+  work_days: string;
+  work_hours: string;
+  staff_name: string;
+  staff_tel: string;
 }
 
 // ─── Step 3: 章立て・写真 ─────────────────────────
@@ -1106,7 +1172,7 @@ function Step3Chapters({
               </button>
             </div>
             <p className="px-4 pb-3 text-xs text-gray-400">
-              写真も説明文もない章は報告書に出力されません。番号（①②…）は出力時に自動で振られます。
+              写真も説明文もない章は報告書に出力されません（「工事日数・特記事項」と「会社案内」は常に出力）。写真は1項目3枚ずつ、1ページに2項目並びます。
             </p>
           </div>
         </div>
