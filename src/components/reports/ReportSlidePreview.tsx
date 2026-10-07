@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import type { Report, ReportChapter } from '@/types';
 import { getOutputChapters } from '@/lib/chapter-numbering';
+import { layoutChapterSlide, SLIDE_W, SLIDE_H, TITLE_BOX, TITLE_RULE, type Box } from '@/lib/slide-layout';
 
 interface Props {
   report: Report;
@@ -38,7 +39,7 @@ export default function ReportSlidePreview({ report }: Props) {
           {/* 4:3 aspect ratio slide */}
           <div
             className="relative bg-white shadow-lg overflow-hidden"
-            style={{ aspectRatio: '4/3', fontFamily: "'Noto Sans JP', sans-serif" }}
+            style={{ aspectRatio: '4/3', fontFamily: "'Noto Sans JP', sans-serif", containerType: 'inline-size' }}
           >
             {slides[currentSlide]}
 
@@ -46,35 +47,35 @@ export default function ReportSlidePreview({ report }: Props) {
             <div
               className="absolute bottom-0 left-0 right-0 flex items-center justify-between bg-white"
               style={{
-                borderTop: '2.5px solid #D32F2F',
-                padding: '4px 12px 6px',
-                fontSize: '10px',
+                borderTop: '0.4cqw solid #D32F2F',
+                padding: '0.62cqw 1.88cqw 0.94cqw',
+                fontSize: '1.56cqw',
                 color: '#888',
               }}
             >
-              <div className="flex items-center gap-1.5" style={{ fontWeight: 700, color: '#1B4F72', fontSize: '10px' }}>
+              <div className="flex items-center" style={{ gap: '0.94cqw', fontWeight: 700, color: '#1B4F72', fontSize: '1.56cqw' }}>
                 <span
                   className="inline-flex items-center justify-center"
                   style={{
-                    width: '18px',
-                    height: '14px',
+                    width: '2.81cqw',
+                    height: '2.19cqw',
                     background: '#D32F2F',
                     color: '#fff',
-                    fontSize: '8px',
+                    fontSize: '1.25cqw',
                     fontWeight: 800,
                     textAlign: 'center',
-                    lineHeight: '14px',
-                    borderRadius: '2px',
+                    lineHeight: '2.19cqw',
+                    borderRadius: '0.31cqw',
                   }}
                 >
                   M
                 </span>
                 株式会社MURATA
               </div>
-              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: '11px', color: '#aaa' }}>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: '1.72cqw', color: '#aaa' }}>
                 {currentSlide + 1}
               </span>
-              <span style={{ fontSize: '9px', color: '#1976D2', fontWeight: 600 }}>
+              <span style={{ fontSize: '1.41cqw', color: '#1976D2', fontWeight: 600 }}>
                 murata-reform.jp
               </span>
             </div>
@@ -192,104 +193,88 @@ function CoverSlide({ report }: { report: Report }) {
   );
 }
 
+/** インチ単位の枠をスライド内の位置（%）に変換 */
+function boxStyle(box: Box): React.CSSProperties {
+  return {
+    position: 'absolute',
+    left: `${(box.x / SLIDE_W) * 100}%`,
+    top: `${(box.y / SLIDE_H) * 100}%`,
+    width: `${(box.w / SLIDE_W) * 100}%`,
+    height: `${(box.h / SLIDE_H) * 100}%`,
+  };
+}
+
+/** pt をスライド幅基準の長さに変換（スライド幅10インチ = 100cqw） */
+function pt(size: number): string {
+  return `${((size / 72) * 100) / SLIDE_W}cqw`;
+}
+
 function ChapterSlide({ chapter, title }: { chapter: ReportChapter; title: string }) {
-  const photos = chapter.photos || [];
-  const hasBeforeAfter = photos.some((p) => p.tag === 'before' || p.tag === 'after');
+  const layout = layoutChapterSlide(chapter.photos || [], chapter.description || '');
 
   return (
-    <div className="flex flex-col h-full pb-6">
-      {/* Chapter header with red underline */}
+    <div className="absolute inset-0">
+      {/* 章見出し＋赤線 */}
       <div
-        className="text-center"
-        style={{
-          padding: '12px 20px 8px',
-          fontSize: '15px',
-          fontWeight: 700,
-          color: '#222',
-          borderBottom: '2.5px solid #D32F2F',
-        }}
+        className="flex items-center justify-center text-center"
+        style={{ ...boxStyle(TITLE_BOX), fontSize: pt(16), fontWeight: 700, color: '#222' }}
       >
         {title}
       </div>
+      <div style={{ ...boxStyle(TITLE_RULE), background: '#D32F2F' }} />
 
-      <div className="flex-1 px-4 py-3 overflow-hidden" style={{ fontSize: '10px' }}>
-        {/* Photo grid */}
-        {photos.length > 0 && (
-          hasBeforeAfter ? (
-            <BeforeAfterPhotoLayout photos={photos} />
-          ) : (
-            <div
-              className="grid gap-1.5 mb-2"
-              style={{
-                gridTemplateColumns: photos.length === 1 ? '1fr' : photos.length <= 4 ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
-              }}
-            >
-              {photos.slice(0, 6).map((p) => (
-                <div key={p.id} className="rounded overflow-hidden bg-gray-100" style={{ aspectRatio: '4/3' }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={p.url || p.preview || ''}
-                    alt={p.caption || ''}
-                    className="w-full h-full object-cover"
-                  />
-                  {p.caption && (
-                    <p className="text-center truncate px-1" style={{ fontSize: '8px', color: '#666', marginTop: '1px' }}>
-                      {p.caption}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )
-        )}
+      {/* 施工前/施工後ラベル */}
+      {layout.labels.map((l) => (
+        <div
+          key={l.text}
+          className="flex items-center justify-center"
+          style={{ ...boxStyle(l.box), fontSize: pt(10), fontWeight: 700, color: `#${l.color}` }}
+        >
+          {l.text}
+        </div>
+      ))}
 
-        {/* Description */}
-        {chapter.description && (
-          <div style={{ fontSize: '10px', color: '#333', lineHeight: 1.6 }}>
-            <p className="whitespace-pre-wrap line-clamp-6">{chapter.description}</p>
+      {/* 写真 */}
+      {layout.photos.map(({ photo, box, caption }) => (
+        <React.Fragment key={photo.id}>
+          <div className="overflow-hidden bg-gray-100" style={{ ...boxStyle(box), borderRadius: '0.6cqw' }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={photo.url || photo.preview || ''} alt={photo.caption || ''} className="w-full h-full object-cover" />
           </div>
-        )}
-      </div>
+          {caption && (
+            <div
+              className="text-center truncate"
+              style={{ ...boxStyle(caption.box), fontSize: pt(8), color: '#666', lineHeight: 1.6 }}
+            >
+              {caption.text}
+            </div>
+          )}
+        </React.Fragment>
+      ))}
+
+      {layout.hiddenCount > 0 && (
+        <div
+          className="text-right"
+          style={{ position: 'absolute', right: '5%', top: '10.7%', fontSize: pt(8), color: '#888' }}
+        >
+          ほか{layout.hiddenCount}枚
+        </div>
+      )}
+
+      {/* 説明文（枠内に収まるよう文字サイズを自動調整） */}
+      {layout.description && (
+        <div
+          className="overflow-hidden whitespace-pre-wrap"
+          style={{
+            ...boxStyle(layout.description.box),
+            fontSize: pt(layout.description.fontSize),
+            lineHeight: 1.5,
+            color: '#333',
+          }}
+        >
+          {layout.description.text}
+        </div>
+      )}
     </div>
   );
 }
-
-function BeforeAfterPhotoLayout({ photos }: { photos: ReportChapter['photos'] }) {
-  const beforePhotos = photos.filter((p) => p.tag === 'before');
-  const afterPhotos = photos.filter((p) => p.tag === 'after');
-  const maxPairs = Math.max(beforePhotos.length, afterPhotos.length);
-
-  return (
-    <div className="mb-2">
-      <div className="grid grid-cols-2 gap-1.5">
-        <div className="text-center" style={{ fontSize: '9px', fontWeight: 600, color: '#E65100' }}>施工前</div>
-        <div className="text-center" style={{ fontSize: '9px', fontWeight: 600, color: '#2E7D32' }}>施工後</div>
-        {Array.from({ length: Math.min(maxPairs, 3) }).map((_, i) => {
-          const bp = beforePhotos[i];
-          const ap = afterPhotos[i];
-          return (
-            <React.Fragment key={i}>
-              <div className="rounded overflow-hidden bg-gray-100" style={{ aspectRatio: '4/3' }}>
-                {bp ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={bp.url || bp.preview || ''} alt={bp.caption || ''} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-300" style={{ fontSize: '8px' }}>—</div>
-                )}
-              </div>
-              <div className="rounded overflow-hidden bg-gray-100" style={{ aspectRatio: '4/3' }}>
-                {ap ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={ap.url || ap.preview || ''} alt={ap.caption || ''} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-300" style={{ fontSize: '8px' }}>—</div>
-                )}
-              </div>
-            </React.Fragment>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-

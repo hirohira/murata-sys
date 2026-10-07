@@ -1,6 +1,13 @@
 // 報告書PowerPoint（茂様式）の生成
 import type { Report } from '@/types';
 import { getOutputChapters } from '@/lib/chapter-numbering';
+import {
+  layoutChapterSlide,
+  TITLE_BOX,
+  TITLE_RULE,
+  CAPTION_FONT,
+  DESC_LINE_SPACING,
+} from '@/lib/slide-layout';
 
 export async function buildReportPptx(report: Report): Promise<Buffer> {
   // Dynamic import pptxgenjs (server-side)
@@ -95,110 +102,78 @@ export async function buildReportPptx(report: Report): Promise<Buffer> {
     addMurataFooter(slide, slideNum);
     slideNum++;
 
-    // Chapter header
+    // 章見出し＋赤線
     slide.addText(displayTitle, {
-      x: 0.0,
-      y: 0.0,
-      w: 10.0,
-      h: 0.6,
+      ...TITLE_BOX,
       fontSize: 16,
       bold: true,
       color: '222222',
       align: 'center',
+      valign: 'middle',
       fontFace: 'Noto Sans JP',
     });
+    slide.addShape(pptx.ShapeType.rect, { ...TITLE_RULE, fill: { color: ACCENT }, line: { color: ACCENT } });
 
-    // Red underline
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 0.5,
-      y: 0.6,
-      w: 9.0,
-      h: 0.03,
-      fill: { color: ACCENT },
-    });
+    // 写真・説明文の配置はプレビューと共通の計算（3枚までは横1列、説明文は枠内に収める）
+    const layout = layoutChapterSlide(ch.photos || [], ch.description || '');
 
-    const photos = ch.photos || [];
-    let descY = 0.8;
+    for (const label of layout.labels) {
+      slide.addText(label.text, {
+        ...label.box,
+        fontSize: 10,
+        bold: true,
+        color: label.color,
+        align: 'center',
+        valign: 'middle',
+        fontFace: 'Noto Sans JP',
+      });
+    }
 
-    // Photos
-    if (photos.length > 0) {
-      const hasBeforeAfter = photos.some((p) => p.tag === 'before' || p.tag === 'after');
-
-      if (hasBeforeAfter) {
-        // Before/After layout
-        const beforePhotos = photos.filter((p) => p.tag === 'before');
-        const afterPhotos = photos.filter((p) => p.tag === 'after');
-
-        slide.addText('施工前', {
-          x: 0.5, y: 0.8, w: 4.2, h: 0.3,
-          fontSize: 9, bold: true, color: 'E65100', align: 'center', fontFace: 'Noto Sans JP',
+    for (const { photo, box, caption } of layout.photos) {
+      const img = photo.url ? await loadImage(photo.url) : null;
+      if (img) {
+        // 元画像の縦横比を渡し、枠いっぱいにトリミング（引き伸ばさない）
+        const scale = Math.max(box.w / img.width, box.h / img.height);
+        slide.addImage({
+          data: img.data,
+          x: box.x,
+          y: box.y,
+          w: img.width * scale,
+          h: img.height * scale,
+          sizing: { type: 'cover', w: box.w, h: box.h },
         });
-        slide.addText('施工後', {
-          x: 5.3, y: 0.8, w: 4.2, h: 0.3,
-          fontSize: 9, bold: true, color: '2E7D32', align: 'center', fontFace: 'Noto Sans JP',
+      }
+      if (caption) {
+        slide.addText(caption.text, {
+          ...caption.box,
+          fontSize: CAPTION_FONT,
+          color: '666666',
+          align: 'center',
+          valign: 'top',
+          fontFace: 'Noto Sans JP',
+          margin: 0,
+          fit: 'shrink',
         });
-
-        const maxPairs = Math.min(Math.max(beforePhotos.length, afterPhotos.length), 3);
-        for (let i = 0; i < maxPairs; i++) {
-          const yPos = 1.15 + i * 1.5;
-          const bp = beforePhotos[i];
-          const ap = afterPhotos[i];
-
-          if (bp?.url) {
-            try {
-              slide.addImage({ path: bp.url, x: 0.5, y: yPos, w: 4.2, h: 1.3, rounding: true });
-            } catch { /* skip if image fails */ }
-          }
-          if (ap?.url) {
-            try {
-              slide.addImage({ path: ap.url, x: 5.3, y: yPos, w: 4.2, h: 1.3, rounding: true });
-            } catch { /* skip if image fails */ }
-          }
-        }
-        descY = 1.15 + maxPairs * 1.5 + 0.1;
-      } else {
-        // Regular photo grid
-        const cols = photos.length === 1 ? 1 : photos.length <= 4 ? 2 : 3;
-        const photoW = cols === 1 ? 5.0 : cols === 2 ? 4.2 : 2.8;
-        const photoH = cols === 1 ? 3.0 : cols === 2 ? 2.0 : 1.6;
-
-        photos.slice(0, 6).forEach((p, i) => {
-          if (!p.url) return;
-          const col = i % cols;
-          const row = Math.floor(i / cols);
-          const xPos = cols === 1 ? 2.5 : 0.5 + col * (photoW + 0.3);
-          const yPos = 0.8 + row * (photoH + 0.2);
-
-          try {
-            slide.addImage({ path: p.url, x: xPos, y: yPos, w: photoW, h: photoH, rounding: true });
-          } catch { /* skip */ }
-
-          if (p.caption) {
-            slide.addText(p.caption, {
-              x: xPos, y: yPos + photoH, w: photoW, h: 0.2,
-              fontSize: 7, color: '666666', align: 'center', fontFace: 'Noto Sans JP',
-            });
-          }
-        });
-
-        const rows = Math.ceil(Math.min(photos.length, 6) / cols);
-        descY = 0.8 + rows * (photoH + 0.3) + 0.1;
       }
     }
 
-    // Description
-    if (ch.description) {
-      const maxDescH = Math.max(0.5, 6.5 - descY);
-      slide.addText(ch.description, {
-        x: 0.5,
-        y: descY,
-        w: 9.0,
-        h: maxDescH,
-        fontSize: 10,
+    if (layout.hiddenCount > 0) {
+      slide.addText(`ほか${layout.hiddenCount}枚`, {
+        x: 7.5, y: 0.66, w: 2.0, h: 0.14,
+        fontSize: 8, color: '888888', align: 'right', fontFace: 'Noto Sans JP', margin: 0,
+      });
+    }
+
+    if (layout.description) {
+      const d = layout.description;
+      slide.addText(d.text, {
+        ...d.box,
+        fontSize: d.fontSize,
         color: '333333',
         fontFace: 'Noto Sans JP',
-        lineSpacing: 18,
+        lineSpacing: d.fontSize * DESC_LINE_SPACING, // 行間はpt指定（倍率指定だとフォント依存で広がる）
         valign: 'top',
+        margin: 0,
       });
     }
   }
@@ -258,4 +233,44 @@ function addMurataFooter(slide: any, pageNum: number) {
     fontFace: 'Inter',
     align: 'right',
   });
+}
+
+/** 画像を取得して data URI と縦横のピクセル数を返す（失敗時は null） */
+async function loadImage(url: string): Promise<{ data: string; width: number; height: number } | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    const size = imageSize(buf);
+    if (!size) return null;
+    const mime = size.type === 'png' ? 'image/png' : 'image/jpeg';
+    return { data: `${mime};base64,${buf.toString('base64')}`, width: size.width, height: size.height };
+  } catch {
+    return null;
+  }
+}
+
+/** JPEG / PNG のピクセルサイズを読む */
+function imageSize(buf: Buffer): { type: 'jpeg' | 'png'; width: number; height: number } | null {
+  if (buf.length > 24 && buf.readUInt32BE(0) === 0x89504e47) {
+    return { type: 'png', width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+  }
+  if (buf.length > 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < buf.length) {
+      if (buf[i] !== 0xff) {
+        i++;
+        continue;
+      }
+      const marker = buf[i + 1];
+      const len = buf.readUInt16BE(i + 2);
+      const isSOF =
+        marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+      if (isSOF) {
+        return { type: 'jpeg', height: buf.readUInt16BE(i + 5), width: buf.readUInt16BE(i + 7) };
+      }
+      i += 2 + len;
+    }
+  }
+  return null;
 }
