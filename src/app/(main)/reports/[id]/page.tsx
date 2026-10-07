@@ -246,13 +246,19 @@ export default function ReportDetailPage() {
         <div className="flex items-center gap-2 flex-shrink-0">
           {!editing ? (
             <>
-              <button
-                type="button"
-                onClick={() => setEditing(true)}
-                className="btn btn-secondary btn-sm"
-              >
-                編集
-              </button>
+              {report.chapters && report.chapters.length > 0 ? (
+                <Link href={`/reports/${report.id}/edit`} className="btn btn-secondary btn-sm">
+                  編集
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setEditing(true)}
+                  className="btn btn-secondary btn-sm"
+                >
+                  編集
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleDelete}
