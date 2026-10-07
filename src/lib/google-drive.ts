@@ -1,16 +1,25 @@
 /**
- * Googleドライブ連携（共有ドライブ＋サービスアカウント）
+ * Googleドライブ連携
  *
- * 必要な環境変数:
- *   GOOGLE_SERVICE_ACCOUNT_EMAIL        サービスアカウントのメールアドレス
- *   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY  秘密鍵（改行は \n のままでよい）
- *   GOOGLE_DRIVE_ROOT_FOLDER_ID         現場フォルダを作る場所（共有ドライブのID、またはその中のフォルダID）
+ * 接続方式は2通り（どちらか一方を設定する）:
  *
- * サービスアカウントを共有ドライブのメンバー（コンテンツ管理者）に追加しておくこと。
+ * A. Googleアカウント（マイドライブ）… デモ・小規模運用向け
+ *   GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET / GOOGLE_OAUTH_REFRESH_TOKEN
+ *   リフレッシュトークンは scripts/google-drive-token.mjs で取得する。
+ *   ファイルはそのアカウントの持ち物として作成される。
+ *
+ * B. サービスアカウント（共有ドライブ）… 本番運用向け
+ *   GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY（改行は \n のままでよい）
+ *   サービスアカウントを共有ドライブのメンバー（コンテンツ管理者）に追加しておくこと。
+ *   ※ サービスアカウントはマイドライブにはファイルを作れない（保存容量がないため）。
+ *
+ * 共通:
+ *   GOOGLE_DRIVE_ROOT_FOLDER_ID  現場フォルダを作る場所のフォルダID（または共有ドライブID）
+ *   両方設定されている場合は A を優先する。
  */
 import { Readable } from 'stream';
 import { drive_v3 } from '@googleapis/drive';
-import { JWT } from 'google-auth-library';
+import { JWT, OAuth2Client } from 'google-auth-library';
 
 export const FOLDER_MIME = 'application/vnd.google-apps.folder';
 export const PPTX_MIME =
@@ -51,24 +60,45 @@ export class DriveNotConfiguredError extends Error {
   }
 }
 
-export function isDriveConfigured(): boolean {
+function hasOAuthConfig(): boolean {
   return Boolean(
-    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
-      process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY &&
-      process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID
+    process.env.GOOGLE_OAUTH_CLIENT_ID &&
+      process.env.GOOGLE_OAUTH_CLIENT_SECRET &&
+      process.env.GOOGLE_OAUTH_REFRESH_TOKEN
   );
 }
 
-let _client: JWT | null = null;
+function hasServiceAccountConfig(): boolean {
+  return Boolean(
+    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+  );
+}
 
-function getAuthClient(): JWT {
+export function isDriveConfigured(): boolean {
+  return Boolean(
+    process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID && (hasOAuthConfig() || hasServiceAccountConfig())
+  );
+}
+
+let _client: JWT | OAuth2Client | null = null;
+
+function getAuthClient(): JWT | OAuth2Client {
   if (!isDriveConfigured()) throw new DriveNotConfiguredError();
   if (!_client) {
-    _client = new JWT({
-      email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      key: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY!.replace(/\\n/g, '\n'),
-      scopes: ['https://www.googleapis.com/auth/drive'],
-    });
+    if (hasOAuthConfig()) {
+      const client = new OAuth2Client({
+        clientId: process.env.GOOGLE_OAUTH_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+      });
+      client.setCredentials({ refresh_token: process.env.GOOGLE_OAUTH_REFRESH_TOKEN });
+      _client = client;
+    } else {
+      _client = new JWT({
+        email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        key: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+        scopes: ['https://www.googleapis.com/auth/drive'],
+      });
+    }
   }
   return _client;
 }
