@@ -36,6 +36,9 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  permissions?: string[];   // 役割に加えて個別に付与された権限
+  is_active?: boolean;      // false = 無効化（ログイン不可）
+  phone?: string | null;
   line_user_id: string | null;
   created_at: string;
   updated_at: string;

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
+import { useMe } from '@/lib/use-me';
 
 const navItems = [
   {
@@ -61,8 +62,24 @@ const navItems = [
   },
 ];
 
+const usersNavItem = {
+  href: '/settings/users',
+  label: 'ユーザー管理',
+  icon: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  ),
+};
+
 export default function Sidebar() {
   const pathname = usePathname();
+  const { can } = useMe();
+  // 「ユーザー登録・編集」権限がある人にだけユーザー管理を表示
+  const items = can('manage_users') ? [...navItems.slice(0, -1), usersNavItem, navItems[navItems.length - 1]] : navItems;
   const router = useRouter();
   const supabase = createClient();
 
@@ -80,10 +97,13 @@ export default function Sidebar() {
       </div>
 
       <nav className="sidebar-nav">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const isActive =
             pathname === item.href ||
-            (item.href !== '/dashboard' && pathname.startsWith(item.href));
+            (item.href !== '/dashboard' &&
+              pathname.startsWith(item.href) &&
+              // /settings/users は「ユーザー管理」側だけを選択状態にする
+              !items.some((o) => o.href.length > item.href.length && pathname.startsWith(o.href)));
           return (
             <Link
               key={item.href}

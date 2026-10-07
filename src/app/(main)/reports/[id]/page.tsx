@@ -6,12 +6,15 @@ import Link from 'next/link';
 import type { Report, ReportStatus, ReportFinding, FindingSeverity, ReportChapter } from '@/types';
 import { REPORT_STATUS_COLORS, SEVERITY_COLORS } from '@/lib/constants';
 import ReportSlidePreview from '@/components/reports/ReportSlidePreview';
+import { useMe } from '@/lib/use-me';
 import { getOutputChapters } from '@/lib/chapter-numbering';
 
 export default function ReportDetailPage() {
   const router = useRouter();
   const params = useParams();
   const reportId = params.id as string;
+  const { can } = useMe();
+  const canApprove = can('approve_reports');
 
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
@@ -309,7 +312,10 @@ export default function ReportDetailPage() {
               確認依頼を出す
             </button>
           )}
-          {report.status === '確認中' && (
+          {report.status === '確認中' && !canApprove && (
+            <span className="text-xs text-gray-500 self-center">承認待ちです（承認は「報告書の承認」権限のある人が行います）</span>
+          )}
+          {report.status === '確認中' && canApprove && (
             <>
               <button
                 type="button"
@@ -327,7 +333,7 @@ export default function ReportDetailPage() {
               </button>
             </>
           )}
-          {report.status === '承認済み' && (
+          {report.status === '承認済み' && canApprove && (
             <button
               type="button"
               onClick={() => handleStatusChange('下書き')}

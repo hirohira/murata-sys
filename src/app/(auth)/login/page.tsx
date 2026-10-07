@@ -23,26 +23,23 @@ export default function LoginPage() {
     });
 
     if (error) {
-      setError('メールアドレスまたはパスワードが正しくありません');
+      setError(
+        /banned/i.test(error.message)
+          ? 'このアカウントは無効化されています。管理者に連絡してください'
+          : 'メールアドレスまたはパスワードが正しくありません'
+      );
       setLoading(false);
       return;
     }
 
-    // Ensure public.users profile exists
+    // プロフィールの確認（無ければサーバー側で「作業員」として作成される）
     if (data.user) {
-      const { data: existing } = await supabase
-        .from('users')
-        .select('id')
-        .eq('id', data.user.id)
-        .single();
-
-      if (!existing) {
-        await supabase.from('users').insert({
-          id: data.user.id,
-          name: data.user.email?.split('@')[0] || '未設定',
-          email: data.user.email || '',
-          role: 'admin',
-        });
+      const res = await fetch('/api/me');
+      if (res.status === 403) {
+        await supabase.auth.signOut();
+        setError('このアカウントは無効化されています。管理者に連絡してください');
+        setLoading(false);
+        return;
       }
     }
 

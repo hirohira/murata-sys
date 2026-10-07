@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { getCurrentUser, permissionError } from '@/lib/current-user';
 import { isDriveConfigured } from '@/lib/google-drive';
 import { saveReportToDrive } from '@/lib/project-drive';
 
@@ -39,6 +40,17 @@ export async function PATCH(
   try {
     const supabase = createServerSupabaseClient();
     const body = await req.json();
+
+    // 承認・差し戻し・承認の取り消しは「報告書の承認」権限が必要（確認依頼は誰でも可）
+    if (body.status !== undefined) {
+      const { data: current } = await supabase.from('reports').select('status').eq('id', params.id).single();
+      const isReviewRequest = current?.status === '下書き' && body.status === '確認中';
+      if (current && current.status !== body.status && !isReviewRequest) {
+        const me = await getCurrentUser();
+        const denied = permissionError(me, 'approve_reports');
+        if (denied) return denied;
+      }
+    }
 
     const updateData: Record<string, unknown> = {};
     if (body.title !== undefined) updateData.title = body.title;

@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { getCurrentUser, permissionError } from '@/lib/current-user';
 import { NextResponse } from 'next/server';
 
 // GET /api/projects/[id] — 案件詳細取得
@@ -48,6 +49,11 @@ export async function DELETE(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  // 案件の削除は「案件の削除」権限が必要
+  const me = await getCurrentUser();
+  const denied = permissionError(me, 'delete_projects');
+  if (denied) return denied;
+
   const supabase = createServerSupabaseClient();
 
   const { error } = await supabase
