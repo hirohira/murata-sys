@@ -43,6 +43,23 @@ function genId() {
   return `${Date.now()}-${_idCounter}`;
 }
 
+// 表紙は先頭、「工事日数・特記事項」「会社案内」は末尾に固定（出力でも常にこの位置）
+const FIXED_HEAD_KEYS = new Set(['cover']);
+const FIXED_TAIL_KEYS = new Set(['schedule', 'company']);
+
+export function isFixedChapter(ch: ReportChapter): boolean {
+  return FIXED_HEAD_KEYS.has(ch.key) || FIXED_TAIL_KEYS.has(ch.key);
+}
+
+/** 自由に並べ替えできる範囲 [lo, hi)（先頭の表紙と末尾の固定ページを除く） */
+function movableRange(chs: ReportChapter[]): { lo: number; hi: number } {
+  let lo = 0;
+  while (lo < chs.length && FIXED_HEAD_KEYS.has(chs[lo].key)) lo++;
+  let hi = chs.length;
+  while (hi > lo && FIXED_TAIL_KEYS.has(chs[hi - 1].key)) hi--;
+  return { lo, hi };
+}
+
 function createDefaultChapters(
   reportType: ReportType,
   buildingType?: BuildingType | null,
@@ -281,7 +298,9 @@ export default function ReportWizard({ initialReport }: { initialReport?: Report
   // 章を追加（選択中の章の直後に挿入）
   const addChapter = useCallback(() => {
     chaptersEditedRef.current = true;
-    const insertAt = activeChapterIdx + 1;
+    // 選択中の章の直後に追加（表紙の前・固定ページの後ろには入れない）
+    const { lo, hi } = movableRange(chapters);
+    const insertAt = Math.min(Math.max(activeChapterIdx + 1, lo), hi);
     setChapters((prev) => {
       const next = [...prev];
       next.splice(insertAt, 0, {
@@ -296,7 +315,7 @@ export default function ReportWizard({ initialReport }: { initialReport?: Report
       return next.map((ch, i) => ({ ...ch, sort_order: i }));
     });
     setActiveChapterIdx(insertAt);
-  }, [activeChapterIdx]);
+  }, [activeChapterIdx, chapters]);
 
   // 章を削除
   const removeChapter = useCallback(
@@ -331,25 +350,30 @@ export default function ReportWizard({ initialReport }: { initialReport?: Report
     setActiveChapterIdx(0);
   }, [chapters, reportType, buildingType, constructionType]);
 
-  // Move chapter up/down
-  const moveChapter = useCallback((idx: number, direction: -1 | 1) => {
-    chaptersEditedRef.current = true;
-    setChapters((prev) => {
-      const newChapters = [...prev];
-      const targetIdx = idx + direction;
-      if (targetIdx < 0 || targetIdx >= newChapters.length) return prev;
-      [newChapters[idx], newChapters[targetIdx]] = [
-        newChapters[targetIdx],
-        newChapters[idx],
-      ];
-      return newChapters.map((ch, i) => ({ ...ch, sort_order: i }));
-    });
-    setActiveChapterIdx((prev) => {
-      const target = prev + direction;
-      if (target < 0) return prev;
-      return target;
-    });
-  }, []);
+  // 章を任意の位置へ移動（ドラッグ＆ドロップ・上下ボタン共通）
+  const moveChapterTo = useCallback(
+    (from: number, to: number) => {
+      const target = chapters[from];
+      if (!target || isFixedChapter(target)) return;
+      const { lo, hi } = movableRange(chapters);
+      const dest = Math.min(Math.max(to, lo), hi - 1);
+      if (dest === from) return;
+      chaptersEditedRef.current = true;
+      setChapters((prev) => {
+        const next = [...prev];
+        const [moved] = next.splice(from, 1);
+        next.splice(dest, 0, moved);
+        return next.map((ch, i) => ({ ...ch, sort_order: i }));
+      });
+      setActiveChapterIdx(dest);
+    },
+    [chapters]
+  );
+
+  const moveChapter = useCallback(
+    (idx: number, direction: -1 | 1) => moveChapterTo(idx, idx + direction),
+    [moveChapterTo]
+  );
 
   // Validate step before advancing
   const canAdvance = (): boolean => {
@@ -676,6 +700,7 @@ export default function ReportWizard({ initialReport }: { initialReport?: Report
           onUpdatePhotoCaption={handleUpdatePhotoCaption}
           onUpdatePhotoTag={handleUpdatePhotoTag}
           onMoveChapter={moveChapter}
+          onMoveChapterTo={moveChapterTo}
           onAddChapter={addChapter}
           onAddImportedPhotos={handleAddImportedPhotos}
           projectId={projectId}
@@ -1090,6 +1115,7 @@ function Step3Chapters({
   onUpdatePhotoCaption,
   onUpdatePhotoTag,
   onMoveChapter,
+  onMoveChapterTo,
   onAddChapter,
   onAddImportedPhotos,
   projectId,
@@ -1107,6 +1133,7 @@ function Step3Chapters({
   onUpdatePhotoCaption: (chapterId: string, photoId: string, caption: string) => void;
   onUpdatePhotoTag: (chapterId: string, photoId: string, tag: PhotoTag) => void;
   onMoveChapter: (idx: number, direction: -1 | 1) => void;
+  onMoveChapterTo: (from: number, to: number) => void;
   onAddChapter: () => void;
   onAddImportedPhotos: (chapterId: string, photos: ChapterPhoto[]) => void;
   projectId: string;
@@ -1117,6 +1144,17 @@ function Step3Chapters({
 }) {
   const activeChapter = chapters[activeChapterIdx];
   const [drivePickerOpen, setDrivePickerOpen] = useState(false);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+  const range = (() => {
+    let lo = 0;
+    while (lo < chapters.length && chapters[lo].key === 'cover') lo++;
+    let hi = chapters.length;
+    while (hi > lo && ['schedule', 'company'].includes(chapters[hi - 1].key)) hi--;
+    return { lo, hi };
+  })();
+  const canMoveUp = (i: number) => !isFixedChapter(chapters[i]) && i > range.lo;
+  const canMoveDown = (i: number) => !isFixedChapter(chapters[i]) && i < range.hi - 1;
 
   return (
     <div className="flex flex-col lg:flex-row gap-4">
@@ -1158,21 +1196,55 @@ function Step3Chapters({
               })}
             </div>
 
-            {/* Desktop: vertical list */}
+            {/* Desktop: vertical list（ドラッグ＆ドロップ、または▲▼で並べ替え） */}
             <div className="hidden lg:block divide-y divide-gray-50">
               {chapters.map((ch, idx) => {
                 const hasContent = ch.photos.length > 0 || ch.description.trim();
+                const fixed = isFixedChapter(ch);
+                const active = idx === activeChapterIdx;
+                const dropHere = dragIdx !== null && overIdx === idx && dragIdx !== idx;
                 return (
-                  <button
+                  <div
                     key={ch.id}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
+                    draggable={!fixed}
                     onClick={() => setActiveChapterIdx(idx)}
-                    className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${
-                      idx === activeChapterIdx
-                        ? 'bg-murata-primary/5 text-murata-primary font-medium'
-                        : 'text-gray-700 hover:bg-gray-50'
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') setActiveChapterIdx(idx);
+                    }}
+                    onDragStart={(e) => {
+                      setDragIdx(idx);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(e) => {
+                      if (dragIdx === null || idx < range.lo || idx >= range.hi) return;
+                      e.preventDefault();
+                      setOverIdx(idx);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragIdx !== null && overIdx !== null) onMoveChapterTo(dragIdx, overIdx);
+                      setDragIdx(null);
+                      setOverIdx(null);
+                    }}
+                    onDragEnd={() => {
+                      setDragIdx(null);
+                      setOverIdx(null);
+                    }}
+                    title={fixed ? 'この章は位置が固定されています' : 'ドラッグして並べ替えできます'}
+                    className={`group w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors cursor-pointer ${
+                      active ? 'bg-murata-primary/5 text-murata-primary font-medium' : 'text-gray-700 hover:bg-gray-50'
+                    } ${dragIdx === idx ? 'opacity-40' : ''} ${
+                      dropHere ? (dragIdx! < idx ? 'border-b-2 border-b-murata-primary' : 'border-t-2 border-t-murata-primary') : ''
                     }`}
                   >
+                    <span
+                      className={`flex-shrink-0 text-gray-300 ${fixed ? 'invisible' : 'cursor-grab group-hover:text-gray-500'}`}
+                      aria-hidden="true"
+                    >
+                      ⋮⋮
+                    </span>
                     <span
                       className={`w-5 h-5 rounded flex items-center justify-center text-xs flex-shrink-0 ${
                         hasContent
@@ -1189,12 +1261,38 @@ function Step3Chapters({
                       )}
                     </span>
                     <span className="truncate">{ch.title}</span>
-                    {ch.photos.length > 0 && (
-                      <span className="ml-auto text-xs text-gray-400">
-                        {ch.photos.length}枚
-                      </span>
-                    )}
-                  </button>
+                    <span className="ml-auto flex items-center gap-1 flex-shrink-0">
+                      {ch.photos.length > 0 && <span className="text-xs text-gray-400">{ch.photos.length}枚</span>}
+                      {!fixed && (
+                        <span className={`flex flex-col ${active ? '' : 'invisible group-hover:visible'}`}>
+                          <button
+                            type="button"
+                            aria-label="上へ移動"
+                            disabled={!canMoveUp(idx)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onMoveChapter(idx, -1);
+                            }}
+                            className="leading-none px-1 text-[10px] text-gray-500 hover:text-murata-primary disabled:opacity-20"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="下へ移動"
+                            disabled={!canMoveDown(idx)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onMoveChapter(idx, 1);
+                            }}
+                            className="leading-none px-1 text-[10px] text-gray-500 hover:text-murata-primary disabled:opacity-20"
+                          >
+                            ▼
+                          </button>
+                        </span>
+                      )}
+                    </span>
+                  </div>
                 );
               })}
             </div>
@@ -1216,7 +1314,7 @@ function Step3Chapters({
               </button>
             </div>
             <p className="px-4 pb-3 text-xs text-gray-400">
-              写真も説明文もない章は報告書に出力されません（「工事日数・特記事項」と「会社案内」は常に出力）。写真は1項目3枚ずつ、1ページに2項目並びます。
+              章は選択中の章のすぐ後ろに追加されます。⋮⋮をドラッグするか▲▼で並べ替えできます（表紙・工事日数・会社案内は位置固定）。写真も説明文もない章は出力されません。
             </p>
           </div>
         </div>
@@ -1231,24 +1329,26 @@ function Step3Chapters({
                 <button
                   type="button"
                   onClick={() => onMoveChapter(activeChapterIdx, -1)}
-                  disabled={activeChapterIdx === 0}
-                  className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="上へ移動"
+                  disabled={!canMoveUp(activeChapterIdx)}
+                  className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="この章を上へ移動"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
                   </svg>
+                  上へ
                 </button>
                 <button
                   type="button"
                   onClick={() => onMoveChapter(activeChapterIdx, 1)}
-                  disabled={activeChapterIdx === chapters.length - 1}
-                  className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="下へ移動"
+                  disabled={!canMoveDown(activeChapterIdx)}
+                  className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="この章を下へ移動"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                   </svg>
+                  下へ
                 </button>
                 <button
                   type="button"
