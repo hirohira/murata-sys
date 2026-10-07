@@ -8,9 +8,9 @@
 //
 // 事前準備: Google Cloud で Drive API を有効化し、
 //          OAuth クライアントID（種類「デスクトップ アプリ」）を作成しておく。
+// ※ 追加ライブラリ不要（npm install なしで実行できる）。Node.js 18 以上。
 import http from 'node:http';
 import { exec } from 'node:child_process';
-import { OAuth2Client } from 'google-auth-library';
 
 const [clientId, clientSecret] = process.argv.slice(2);
 if (!clientId || !clientSecret) {
@@ -22,13 +22,16 @@ const server = http.createServer();
 server.listen(0, '127.0.0.1', () => {
   const { port } = server.address();
   const redirectUri = `http://127.0.0.1:${port}`;
-  const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-
-  const authUrl = client.generateAuthUrl({
-    access_type: 'offline',
-    prompt: 'consent',
-    scope: ['https://www.googleapis.com/auth/drive'],
-  });
+  const authUrl =
+    'https://accounts.google.com/o/oauth2/v2/auth?' +
+    new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      access_type: 'offline',
+      prompt: 'consent',
+      scope: 'https://www.googleapis.com/auth/drive',
+    });
 
   server.on('request', async (req, res) => {
     const url = new URL(req.url, redirectUri);
@@ -46,7 +49,19 @@ server.listen(0, '127.0.0.1', () => {
       process.exit(1);
     }
     try {
-      const { tokens } = await client.getToken(code);
+      const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code',
+        }),
+      });
+      const tokens = await tokenRes.json();
+      if (!tokenRes.ok) throw new Error(tokens.error_description || tokens.error || `HTTP ${tokenRes.status}`);
       res.end('<p>取得できました。このタブを閉じて、ターミナルに戻ってください。</p>');
       if (!tokens.refresh_token) {
         console.error('\nリフレッシュトークンが返されませんでした。もう一度実行してください。');
