@@ -39,6 +39,15 @@ export async function GET(request: Request) {
   return NextResponse.json({ data, count });
 }
 
+// 着工予定は年月（YYYY-MM）で入力されるので、DBのdate型に合わせて月初日にする
+function normalizeStartDate(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const v = value.trim();
+  if (/^\d{4}-\d{2}$/.test(v)) return `${v}-01`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  return null;
+}
+
 // POST /api/projects — 案件新規作成
 export async function POST(request: Request) {
   const supabase = createServerSupabaseClient();
@@ -60,7 +69,7 @@ export async function POST(request: Request) {
     construction_type: body.construction_type,
     building_type: body.building_type,
     address: body.address || null,
-    start_date: body.start_date || null,
+    start_date: normalizeStartDate(body.start_date),
     status: body.status || '調査中',
     audience_type: body.audience_type || '一般施主向け',
     created_by: user.id,

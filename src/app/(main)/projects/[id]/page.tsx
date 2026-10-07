@@ -139,7 +139,11 @@ export default function ProjectDetailPage() {
               <InfoRow label="住所" value={project.address || '未設定'} />
               <InfoRow
                 label="着工予定"
-                value={project.start_date || '未設定'}
+                value={
+                  project.start_date
+                    ? `${project.start_date.slice(0, 4)}年${Number(project.start_date.slice(5, 7))}月`
+                    : '未設定'
+                }
               />
               <InfoRow label="読み手" value={project.audience_type} />
             </div>
