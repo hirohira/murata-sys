@@ -519,7 +519,47 @@
     info.textContent = '';
   }
 
+  // カメラが使えないときの案内（端末・ブラウザ別）
+  var UA = navigator.userAgent || '';
+  var IS_IOS = /iPhone|iPad|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var IN_APP = /Line\/|FBAN|FBAV|Instagram|GSA\/|YJApp|Twitter/i.test(UA);
+  var IOS_CHROME = IS_IOS && /CriOS/.test(UA);
+
+  function showCameraHelp(errName) {
+    var lines = [];
+    if (IN_APP) {
+      lines.push('LINEなどのアプリの中で開いているため、カメラを使えません。');
+      lines.push('画面右上のメニューから「Safariで開く」（Androidは「ブラウザで開く」）を選んで開き直してください。');
+    } else if (errName === 'NotAllowedError' || errName === 'SecurityError') {
+      lines.push('カメラの使用が許可されていません。次の設定を確認してから、ページを再読み込みしてください。');
+      if (IOS_CHROME) {
+        lines.push('・「設定」アプリ →「Chrome」→「カメラ」をオン');
+      } else if (IS_IOS) {
+        lines.push('・アドレスバー左の「ぁあ」→「Webサイトの設定」→「カメラ」を「許可」');
+        lines.push('・それでも出る場合：「設定」アプリ →「Safari」→「カメラ」を「確認」または「許可」');
+      } else {
+        lines.push('・アドレスバー左のアイコン →「権限」または「サイトの設定」→「カメラ」を「許可」');
+        lines.push('・それでも出る場合：「設定」→「アプリ」→「Chrome」→「権限」→「カメラ」を許可');
+      }
+    } else if (errName === 'NotReadableError' || errName === 'AbortError') {
+      lines.push('カメラをほかのアプリが使っています。カメラアプリなどを閉じてから、もう一度お試しください。');
+    } else if (errName === 'NotFoundError' || errName === 'OverconstrainedError') {
+      lines.push('使えるカメラが見つかりませんでした（' + errName + '）。');
+    } else {
+      lines.push('カメラを起動できませんでした（' + (errName || 'エラー') + '）。');
+    }
+    var p = placeholder.querySelector('p');
+    p.textContent = '';
+    p.style.textAlign = 'left';
+    lines.forEach(function (l, i) {
+      if (i) p.appendChild(document.createElement('br'));
+      p.appendChild(document.createTextNode(l));
+    });
+    document.getElementById('cam-start').textContent = 'もう一度試す';
+  }
+
   document.getElementById('cam-start').addEventListener('click', function () {
+    if (IN_APP) { showCameraHelp('InApp'); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       placeholder.querySelector('p').textContent = 'このブラウザではアプリ内カメラを使えません。Safari（iPhone）またはChrome（Android）で開いてください。';
       return;
@@ -551,9 +591,7 @@
         zoomVal.textContent = Number(zoomInput.value).toFixed(1) + '倍';
       }
     }).catch(function (err) {
-      placeholder.querySelector('p').textContent = (err && err.name === 'NotAllowedError')
-        ? 'カメラの使用が許可されませんでした。ブラウザの設定でカメラを許可してから、もう一度お試しください。'
-        : 'カメラを起動できませんでした（' + (err && err.name ? err.name : 'エラー') + '）。';
+      showCameraHelp(err && err.name);
     });
   });
 
