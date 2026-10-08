@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>写真アップ方式のサンプル</title>
+<style>
+  :root {
+    --navy: #1B4F72;
+    --navy-dark: #133A55;
+    --red: #D32F2F;
+    --bg: #F4F6F8;
+    --card: #FFFFFF;
+    --line: #DDE3E8;
+    --text: #1F2A33;
+    --sub: #5B6873;
+    --t-genjo: #1F6FB2;
+    --t-genin: #C62828;
+    --t-taisaku: #2E7D32;
+    --t-sonota: #616B74;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+  header {
+    background: var(--navy);
+    color: #fff;
+    padding: 14px 16px 0;
+    border-top: 4px solid var(--red);
+  }
+  header h1 { font-size: 18px; margin: 0 0 2px; }
+  header p { margin: 0 0 10px; font-size: 12px; color: #C9D6E2; }
+  .tabs { display: flex; gap: 4px; }
+  .tabs button {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    color: #C9D6E2;
+    padding: 10px 4px 12px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+  }
+  .tabs button[aria-selected="true"] { color: #fff; border-bottom-color: #fff; }
+  .tabs small { display: block; font-size: 11px; font-weight: 400; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  .lead { font-size: 14px; color: var(--sub); margin: 0 0 12px; }
+  .step { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 14px; }
+  .step:last-child { margin-bottom: 0; }
+  .num {
+    flex: none; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--navy); color: #fff; font-size: 14px; font-weight: 700;
+    display: grid; place-items: center; margin-top: 1px;
+  }
+  .step-body { flex: 1; min-width: 0; }
+  .step-title { font-weight: 700; margin-bottom: 6px; }
+  .grid4 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tagbtn {
+    border: 0; border-radius: 12px; color: #fff; font: inherit; font-weight: 700;
+    font-size: 17px; padding: 18px 8px; cursor: pointer; display: flex; flex-direction: column;
+    align-items: center; gap: 4px; min-height: 84px;
+  }
+  .tagbtn small { font-size: 12px; font-weight: 400; opacity: .9; }
+  .tagbtn:active { transform: scale(.98); }
+  .seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .seg button {
+    border: 2px solid var(--line); background: #fff; border-radius: 10px; padding: 10px 2px;
+    font: inherit; font-weight: 700; font-size: 15px; color: var(--sub); cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { color: #fff; border-color: transparent; }
+  .btn {
+    display: flex; width: 100%; align-items: center; justify-content: center; gap: 8px;
+    border: 0; border-radius: 12px; padding: 14px; font: inherit; font-weight: 700; font-size: 16px;
+    background: var(--navy); color: #fff; cursor: pointer;
+  }
+  .btn.ghost { background: #fff; color: var(--navy); border: 2px solid var(--navy); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .hint { font-size: 12px; color: var(--sub); margin: 6px 0 0; }
+  .note { font-size: 13px; background: #FFF6E5; color: #6B4A00; border-radius: 8px; padding: 10px 12px; margin: 0 0 14px; }
+  .toggle { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; }
+  .toggle input { width: 20px; height: 20px; margin-top: 2px; }
+  .badge { display: inline-block; color: #fff; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 6px; }
+
+  /* アップ済み一覧 */
+  .uploads h2 { font-size: 16px; margin: 0 0 4px; }
+  .uploads .summary { font-size: 13px; color: var(--sub); margin: 0 0 12px; }
+  .group { margin-top: 14px; }
+  .group h3 { font-size: 14px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+  .thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .thumb { position: relative; border-radius: 8px; overflow: hidden; background: #E3E8EC; aspect-ratio: 4 / 3; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0,0,0,.2); }
+  .thumb .bar i { display: block; height: 100%; background: #fff; width: 0; transition: width .2s; }
+  .thumb .done { position: absolute; right: 4px; top: 4px; background: rgba(0,0,0,.55); color: #fff; font-size: 11px; border-radius: 4px; padding: 0 5px; }
+  .thumb select {
+    position: absolute; left: 4px; bottom: 6px; font-size: 11px; border-radius: 4px; border: 0;
+    padding: 1px 2px; color: #fff; font-weight: 700;
+  }
+  .thumb .del {
+    position: absolute; right: 4px; bottom: 6px; width: 22px; height: 22px; border-radius: 50%;
+    border: 0; background: rgba(0,0,0,.55); color: #fff; font-size: 13px; line-height: 22px; padding: 0; cursor: pointer;
+  }
+  .fname { font-size: 10px; color: var(--sub); word-break: break-all; margin-top: 2px; }
+  .empty { font-size: 13px; color: var(--sub); text-align: center; padding: 18px 0 6px; }
+
+  /* アプリ内カメラ */
+  .cam { position: relative; background: #000; border-radius: 12px; overflow: hidden; aspect-ratio: 3 / 4; }
+  .cam video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cam .overlay-top { position: absolute; left: 8px; right: 8px; top: 8px; }
+  .cam .overlay-top .seg button { background: rgba(255,255,255,.85); }
+  .cam .info { position: absolute; left: 10px; bottom: 96px; color: #fff; font-size: 12px; text-shadow: 0 1px 2px #000; }
+  .cam .controls {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 16px 18px;
+    display: flex; align-items: center; justify-content: space-between;
+    background: linear-gradient(transparent, rgba(0,0,0,.55));
+  }
+  .shutter {
+    width: 72px; height: 72px; border-radius: 50%; border: 5px solid #fff; background: rgba(255,255,255,.25);
+    cursor: pointer; padding: 0;
+  }
+  .shutter:active { background: rgba(255,255,255,.7); }
+  .cam .small {
+    min-width: 64px; border: 0; border-radius: 20px; padding: 8px 10px; font: inherit; font-size: 13px; font-weight: 700;
+    background: rgba(0,0,0,.5); color: #fff; cursor: pointer;
+  }
+  .cam .count { color: #fff; font-weight: 700; font-size: 14px; min-width: 64px; text-align: right; }
+  .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .15s; }
+  .cam-placeholder { color: #fff; position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; font-size: 14px; }
+  .zoom { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--sub); margin-top: 10px; }
+  .zoom input { flex: 1; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  :focus-visible { outline: 3px solid #F2B705; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>写真アップ方式のサンプル（MURATA様 検討用）</h1>
+  <p>3つの方式を実際のスマホで試せます。写真は端末の中で表示するだけで、どこにも送信しません。</p>
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tab-1" aria-selected="true" aria-controls="panel-1">方式1<small>区分を押して撮影</small></button>
+    <button role="tab" id="tab-2" aria-selected="false" aria-controls="panel-2">方式2<small>連続撮影→まとめて選択</small></button>
+    <button role="tab" id="tab-3" aria-selected="false" aria-controls="panel-3">方式3<small>アプリ内カメラ</small></button>
+  </nav>
+</header>
+
+<main>
+  <!-- 方式1 -->
+  <section class="panel active" id="panel-1" role="tabpanel" aria-labelledby="tab-1">
+    <div class="card">
+      <p class="lead">撮りたい写真の区分のボタンを押すと、スマホのカメラが開きます。撮った写真はその区分が付いた状態でアップされます。</p>
+      <div class="grid4" id="m1-buttons"></div>
+      <p class="hint">スマホ純正のカメラで撮るので画質は最高です。1回押すごとに1枚撮影します。</p>
+    </div>
+    <div class="card uploads" id="up-1"></div>
+  </section>
+
+  <!-- 方式2 -->
+  <section class="panel" id="panel-2" role="tabpanel" aria-labelledby="tab-2">
+    <div class="card">
+      <div class="step">
+        <div class="num">1</div>
+        <div class="step-body">
+          <div class="step-title">スマホのカメラで続けて撮影</div>
+          <p class="hint" style="margin:0 0 8px">ホーム画面のカメラアプリで、必要な枚数を続けて撮ってから、この画面に戻ってきてください。（Webの画面から純正カメラを「連写モード」で開くことはできないため）</p>
+          <label class="toggle"><input type="checkbox" id="m2-session"><span>【試験】撮影開始を記録して、その後に撮った写真だけを取り込む<br><span class="hint" id="m2-session-state" style="margin:0">チェックを入れた時刻：未記録</span></span></label>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div class="step-body">
+          <div class="step-title">区分を選ぶ</div>
+          <div class="seg" id="m2-seg"></div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div class="step-body">
+          <div class="step-title">写真を選んでアップ</div>
+          <button class="btn" id="m2-pick" type="button">🖼 写真をまとめて選ぶ</button>
+          <p class="hint" id="m2-result">選んだ写真すべてに、2で選んだ区分が付きます。区分ごとに 2→3 を繰り返します。</p>
+        </div>
+      </div>
+    </div>
+    <div class="card uploads" id="up-2"></div>
+  </section>
+
+  <!-- 方式3 -->
+  <section class="panel" id="panel-3" role="tabpanel" aria-labelledby="tab-3">
+    <div class="card">
+      <p class="lead">この画面の中でカメラを動かし、区分を切り替えながら続けて撮影できます。シャッターを押すたびにその時の区分でアップされます。</p>
+      <div class="cam" id="cam">
+        <video id="video" playsinline muted></video>
+        <div class="cam-placeholder" id="cam-placeholder">
+          <div>
+            <p style="margin:0 0 14px">「カメラを起動」を押すと、カメラの使用許可を求められます。</p>
+            <button class="btn" id="cam-start" type="button" style="width:auto;padding:12px 24px;margin:0 auto">カメラを起動</button>
+          </div>
+        </div>
+        <div class="overlay-top"><div class="seg" id="m3-seg"></div></div>
+        <div class="info" id="cam-info"></div>
+        <div class="controls">
+          <button class="small" id="torch" type="button" hidden>ライト</button>
+          <span id="torch-spacer" style="min-width:64px"></span>
+          <button class="shutter" id="shutter" type="button" aria-label="撮影" disabled></button>
+          <span class="count" id="m3-count">0枚</span>
+        </div>
+        <div class="flash" id="flash"></div>
+      </div>
+      <div class="zoom" id="zoom-wrap" hidden>
+        <span>ズーム</span><input type="range" id="zoom" aria-label="ズーム"><span id="zoom-val"></span>
+      </div>
+      <p class="hint">画質は純正カメラより下がります（下の「撮影サイズ」で確認できます）。暗い場所の写りも比べてみてください。</p>
+    </div>
+    <div class="card uploads" id="up-3"></div>
+  </section>
+</main>
+
+<input type="file" accept="image/*" capture="environment" id="file-camera" class="sr-only" tabindex="-1" aria-hidden="true">
+<input type="file" accept="image/*" multiple id="file-multi" class="sr-only" tabindex="-1" aria-hidden="true">
+
+<script>
+(function () {
+  'use strict';
+
+  var TAGS = [
+    { key: 'genjo', label: '現状', color: 'var(--t-genjo)', hint: '全体・不具合の様子' },
+    { key: 'genin', label: '原因', color: 'var(--t-genin)', hint: '原因と考えられる箇所' },
+    { key: 'taisaku', label: '対策', color: 'var(--t-taisaku)', hint: '対策・施工の様子' },
+    { key: 'sonota', label: 'その他', color: 'var(--t-sonota)', hint: '上記以外' }
+  ];
+  var TAG = {};
+  TAGS.forEach(function (t) { TAG[t.key] = t; });
+
+  // ファイル名は運用テンプレートの「日付_現場ID_内容」に合わせた例
+  var SITE_ID = '2026-007';
+  var uploads = { 1: [], 2: [], 3: [] };
+  var seq = 0;
+
+  function ymd(d) {
+    return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  }
+  function hm(d) {
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
+  }
+  function fileName(mode, tag) {
+    var n = uploads[mode].filter(function (u) { return u.tag === tag; }).length + 1;
+    return ymd(new Date()) + '_' + SITE_ID + '_' + TAG[tag].label + '_' + String(n).padStart(3, '0') + '.jpg';
+  }
+
+  // ── タブ ──
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+  tabs.forEach(function (tab, i) {
+    tab.addEventListener('click', function () {
+      tabs.forEach(function (t, j) {
+        t.setAttribute('aria-selected', String(i === j));
+        document.getElementById('panel-' + (j + 1)).classList.toggle('active', i === j);
+      });
+      if (i !== 2) stopCamera();
+      window.scrollTo(0, 0);
+    });
+  });
+
+  // ── 区分の選択（セグメント） ──
+  function buildSeg(el, initial, onChange) {
+    var current = initial;
+    function render() {
+      el.innerHTML = '';
+      TAGS.forEach(function (t) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = t.label;
+        b.setAttribute('aria-pressed', String(t.key === current));
+        if (t.key === current) b.style.background = t.color;
+        b.addEventListener('click', function () { current = t.key; render(); onChange(current); });
+        el.appendChild(b);
+      });
+    }
+    render();
+    return function () { return current; };
+  }
+
+  // ── アップ（サンプルなので端末内で進捗を表示するだけ） ──
+  function addUpload(mode, blob, tag, extra) {
+    var item = {
+      id: ++seq,
+      url: URL.createObjectURL(blob),
+      tag: tag,
+      name: fileName(mode, tag),
+      progress: 0,
+      extra: extra || ''
+    };
+    uploads[mode].push(item);
+    renderUploads(mode);
+    var timer = setInterval(function () {
+      item.progress = Math.min(100, item.progress + 20 + Math.random() * 25);
+      var bar = document.querySelector('[data-bar="' + item.id + '"]');
+      if (bar) bar.style.width = item.progress + '%';
+      if (item.progress >= 100) {
+        clearInterval(timer);
+        renderUploads(mode);
+      }
+    }, 180);
+  }
+
+  function renderUploads(mode) {
+    var box = document.getElementById('up-' + mode);
+    var list = uploads[mode];
+    box.innerHTML = '';
+    var h = document.createElement('h2');
+    h.textContent = 'アップした写真';
+    box.appendChild(h);
+    var s = document.createElement('p');
+    s.className = 'summary';
+    s.textContent = list.length
+      ? '合計' + list.length + '枚　' + TAGS.map(function (t) {
+          return t.label + ' ' + list.filter(function (u) { return u.tag === t.key; }).length + '枚';
+        }).join('・')
+      : '';
+    box.appendChild(s);
+    if (!list.length) {
+      var e = document.createElement('p');
+      e.className = 'empty';
+      e.textContent = 'まだ写真はありません。上の操作で撮影・選択すると、ここに区分ごとに並びます。';
+      box.appendChild(e);
+      return;
+    }
+    TAGS.forEach(function (t) {
+      var items = list.filter(function (u) { return u.tag === t.key; });
+      if (!items.length) return;
+      var g = document.createElement('div');
+      g.className = 'group';
+      var gh = document.createElement('h3');
+      var badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.style.background = t.color;
+      badge.textContent = t.label;
+      gh.appendChild(badge);
+      gh.appendChild(document.createTextNode(items.length + '枚'));
+      g.appendChild(gh);
+      var grid = document.createElement('div');
+      grid.className = 'thumbs';
+      items.forEach(function (u) { grid.appendChild(thumb(mode, u)); });
+      g.appendChild(grid);
+      box.appendChild(g);
+    });
+    var hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = '区分を間違えたときは、写真左下の区分を押して変更できます。本番ではGoogleドライブの現場フォルダに区分ごとに保存し、報告書の章にも自動で振り分ける想定です。';
+    box.appendChild(hint);
+  }
+
+  function thumb(mode, u) {
+    var wrap = document.createElement('div');
+    var t = document.createElement('div');
+    t.className = 'thumb';
+    var img = document.createElement('img');
+    img.src = u.url;
+    img.alt = TAG[u.tag].label + 'の写真';
+    t.appendChild(img);
+    if (u.progress < 100) {
+      var bar = document.createElement('div');
+      bar.className = 'bar';
+      var fill = document.createElement('i');
+      fill.setAttribute('data-bar', u.id);
+      fill.style.width = u.progress + '%';
+      bar.appendChild(fill);
+      t.appendChild(bar);
+    } else {
+      var done = document.createElement('span');
+      done.className = 'done';
+      done.textContent = 'アップ済';
+      t.appendChild(done);
+    }
+    var sel = document.createElement('select');
+    sel.setAttribute('aria-label', '区分を変更');
+    sel.style.background = TAG[u.tag].color;
+    TAGS.forEach(function (tg) {
+      var o = document.createElement('option');
+      o.value = tg.key;
+      o.textContent = tg.label;
+      if (tg.key === u.tag) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', function () {
+      u.tag = sel.value;
+      u.name = u.name.replace(/_[^_]+_(\d{3})\.jpg$/, '_' + TAG[u.tag].label + '_$1.jpg');
+      renderUploads(mode);
+    });
+    t.appendChild(sel);
+    var del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'del';
+    del.setAttribute('aria-label', '削除');
+    del.textContent = '×';
+    del.addEventListener('click', function () {
+      uploads[mode] = uploads[mode].filter(function (x) { return x !== u; });
+      URL.revokeObjectURL(u.url);
+      renderUploads(mode);
+    });
+    t.appendChild(del);
+    wrap.appendChild(t);
+    var fn = document.createElement('div');
+    fn.className = 'fname';
+    fn.textContent = u.name + (u.extra ? '（' + u.extra + '）' : '');
+    wrap.appendChild(fn);
+    return wrap;
+  }
+
+  // ── 方式1：区分ボタン → 純正カメラ（1枚） ──
+  var fileCamera = document.getElementById('file-camera');
+  var pendingTag = null;
+  var m1 = document.getElementById('m1-buttons');
+  TAGS.forEach(function (t) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tagbtn';
+    b.style.background = t.color;
+    b.innerHTML = '<span>📷 ' + t.label + 'を撮影</span><small></small>';
+    b.querySelector('small').textContent = t.hint;
+    b.addEventListener('click', function () {
+      pendingTag = t.key;
+      fileCamera.value = '';
+      fileCamera.click();
+    });
+    m1.appendChild(b);
+  });
+  fileCamera.addEventListener('change', function () {
+    var f = fileCamera.files && fileCamera.files[0];
+    if (f && pendingTag) addUpload(1, f, pendingTag);
+    pendingTag = null;
+  });
+
+  // ── 方式2：連続撮影したあと、区分を選んでまとめて選択 ──
+  var m2Tag = buildSeg(document.getElementById('m2-seg'), 'genjo', function () {});
+  var fileMulti = document.getElementById('file-multi');
+  var sessionBox = document.getElementById('m2-session');
+  var sessionState = document.getElementById('m2-session-state');
+  var sessionStart = null;
+  sessionBox.addEventListener('change', function () {
+    sessionStart = sessionBox.checked ? Date.now() : null;
+    sessionState.textContent = sessionStart
+      ? 'チェックを入れた時刻：' + hm(new Date(sessionStart)) + '（これ以降に撮った写真だけを取り込みます）'
+      : 'チェックを入れた時刻：未記録';
+  });
+  document.getElementById('m2-pick').addEventListener('click', function () {
+    fileMulti.value = '';
+    fileMulti.click();
+  });
+  fileMulti.addEventListener('change', function () {
+    var files = Array.prototype.slice.call(fileMulti.files || []);
+    var tag = m2Tag();
+    var added = 0;
+    var skipped = 0;
+    files.forEach(function (f) {
+      // 端末が渡すファイルの日時（撮影日時が残るかは機種・設定によって異なる）
+      var when = f.lastModified ? new Date(f.lastModified) : null;
+      if (sessionStart && when && when.getTime() < sessionStart - 60 * 1000) {
+        skipped++;
+        return;
+      }
+      addUpload(2, f, tag, when ? '日時 ' + hm(when) : '');
+      added++;
+    });
+    var msg = added + '枚を「' + TAG[tag].label + '」でアップしました。';
+    if (skipped) msg += '撮影開始より前の' + skipped + '枚は取り込みませんでした。';
+    if (sessionStart && files.length && !skipped) {
+      msg += '（全部取り込まれた場合、この端末では撮影日時が正しく渡っていない可能性があります。下のファイル名横の日時を確認してください）';
+    }
+    document.getElementById('m2-result').textContent = msg;
+  });
+
+  // ── 方式3：アプリ内カメラで連続撮影 ──
+  var m3Tag = buildSeg(document.getElementById('m3-seg'), 'genjo', function () {});
+  var video = document.getElementById('video');
+  var shutter = document.getElementById('shutter');
+  var info = document.getElementById('cam-info');
+  var placeholder = document.getElementById('cam-placeholder');
+  var torchBtn = document.getElementById('torch');
+  var torchSpacer = document.getElementById('torch-spacer');
+  var zoomWrap = document.getElementById('zoom-wrap');
+  var zoomInput = document.getElementById('zoom');
+  var zoomVal = document.getElementById('zoom-val');
+  var stream = null;
+  var track = null;
+  var imageCapture = null;
+  var torchOn = false;
+
+  function stopCamera() {
+    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    stream = null;
+    track = null;
+    imageCapture = null;
+    shutter.disabled = true;
+    placeholder.hidden = false;
+    info.textContent = '';
+  }
+
+  document.getElementById('cam-start').addEventListener('click', function () {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      placeholder.querySelector('p').textContent = 'このブラウザではアプリ内カメラを使えません。Safari（iPhone）またはChrome（Android）で開いてください。';
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 4096 }, height: { ideal: 3072 } }
+    }).then(function (s) {
+      stream = s;
+      track = s.getVideoTracks()[0];
+      video.srcObject = s;
+      return video.play();
+    }).then(function () {
+      placeholder.hidden = true;
+      shutter.disabled = false;
+      var st = track.getSettings ? track.getSettings() : {};
+      info.textContent = '映像サイズ ' + (st.width || video.videoWidth) + '×' + (st.height || video.videoHeight);
+      if ('ImageCapture' in window) {
+        try { imageCapture = new window.ImageCapture(track); } catch (e) { imageCapture = null; }
+      }
+      var caps = track.getCapabilities ? track.getCapabilities() : {};
+      if (caps.torch) { torchBtn.hidden = false; torchSpacer.hidden = true; }
+      if (caps.zoom) {
+        zoomWrap.hidden = false;
+        zoomInput.min = caps.zoom.min;
+        zoomInput.max = caps.zoom.max;
+        zoomInput.step = caps.zoom.step || 0.1;
+        zoomInput.value = st.zoom || caps.zoom.min;
+        zoomVal.textContent = Number(zoomInput.value).toFixed(1) + '倍';
+      }
+    }).catch(function (err) {
+      placeholder.querySelector('p').textContent = (err && err.name === 'NotAllowedError')
+        ? 'カメラの使用が許可されませんでした。ブラウザの設定でカメラを許可してから、もう一度お試しください。'
+        : 'カメラを起動できませんでした（' + (err && err.name ? err.name : 'エラー') + '）。';
+    });
+  });
+
+  torchBtn.addEventListener('click', function () {
+    if (!track) return;
+    torchOn = !torchOn;
+    track.applyConstraints({ advanced: [{ torch: torchOn }] }).catch(function () {});
+    torchBtn.textContent = torchOn ? 'ライト消' : 'ライト';
+  });
+
+  zoomInput.addEventListener('input', function () {
+    if (!track) return;
+    zoomVal.textContent = Number(zoomInput.value).toFixed(1) + '倍';
+    track.applyConstraints({ advanced: [{ zoom: Number(zoomInput.value) }] }).catch(function () {});
+  });
+
+  function grabFrame() {
+    var canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    return new Promise(function (resolve) {
+      canvas.toBlob(function (b) { resolve({ blob: b, w: canvas.width, h: canvas.height, how: '映像から' }); }, 'image/jpeg', 0.92);
+    });
+  }
+
+  function takePhoto() {
+    // Androidの一部では高画質の静止画撮影（ImageCapture）が使える。使えなければ映像の1コマを保存
+    if (imageCapture && imageCapture.takePhoto) {
+      return imageCapture.takePhoto().then(function (b) {
+        return createImageBitmap(b).then(function (bmp) {
+          return { blob: b, w: bmp.width, h: bmp.height, how: '静止画' };
+        });
+      }).catch(function () { return grabFrame(); });
+    }
+    return grabFrame();
+  }
+
+  var shotCount = 0;
+  shutter.addEventListener('click', function () {
+    if (!stream) return;
+    var flash = document.getElementById('flash');
+    flash.style.opacity = '0.8';
+    setTimeout(function () { flash.style.opacity = '0'; }, 120);
+    var tag = m3Tag();
+    takePhoto().then(function (r) {
+      if (!r.blob) return;
+      shotCount++;
+      document.getElementById('m3-count').textContent = shotCount + '枚';
+      addUpload(3, r.blob, tag, '撮影サイズ ' + r.w + '×' + r.h + '・' + r.how);
+    });
+  });
+
+  window.addEventListener('pagehide', stopCamera);
+
+  [1, 2, 3].forEach(renderUploads);
+})();
+</script>
+</body>
+</html>
