@@ -116,6 +116,14 @@
     border: 0; background: rgba(0,0,0,.55); color: #fff; font-size: 13px; line-height: 22px; padding: 0; cursor: pointer;
   }
   .fname { font-size: 10px; color: var(--sub); word-break: break-all; margin-top: 2px; }
+  /* スマホ幅では写真を縦1列に大きく並べる */
+  @media (max-width: 600px) {
+    .thumbs { grid-template-columns: 1fr; gap: 14px; }
+    .thumb select { font-size: 14px; padding: 4px 6px; left: 8px; bottom: 10px; }
+    .thumb .del { width: 32px; height: 32px; line-height: 32px; font-size: 16px; right: 8px; bottom: 10px; }
+    .thumb .done { font-size: 12px; padding: 2px 8px; right: 8px; top: 8px; }
+    .fname { font-size: 12px; margin-top: 4px; }
+  }
   .empty { font-size: 13px; color: var(--sub); text-align: center; padding: 18px 0 6px; }
 
   /* アプリ内カメラ */
