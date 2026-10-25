@@ -57,3 +57,40 @@ export function dataURLtoBlob(dataURL: string): Blob {
   }
   return new Blob([array], { type: mime });
 }
+
+/**
+ * アップ用に縮小したJPEG（Blob）と縦横サイズを返す。
+ * 報告書・ドライブ保存に十分な画質を保ちつつ、Vercelの送信上限（4.5MB）に収める。
+ */
+export async function resizeForUpload(
+  source: Blob,
+  maxDimension: number = 2000,
+  quality: number = 0.85
+): Promise<{ blob: Blob; width: number; height: number }> {
+  const url = URL.createObjectURL(source);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error('画像を読み込めませんでした'));
+      el.src = url;
+    });
+    let width = img.naturalWidth;
+    let height = img.naturalHeight;
+    const scale = Math.min(1, maxDimension / Math.max(width, height));
+    width = Math.round(width * scale);
+    height = Math.round(height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas context unavailable');
+    ctx.drawImage(img, 0, 0, width, height);
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('画像を変換できませんでした'))), 'image/jpeg', quality)
+    );
+    return { blob, width, height };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}

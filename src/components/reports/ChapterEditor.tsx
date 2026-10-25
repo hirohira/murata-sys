@@ -12,6 +12,7 @@ interface Props {
   onUpdatePhotoCaption: (chapterId: string, photoId: string, caption: string) => void;
   onUpdatePhotoTag?: (chapterId: string, photoId: string, tag: PhotoTag) => void;
   onOpenDrivePicker?: () => void;
+  onOpenProjectPhotos?: () => void;
   isCompletionReport?: boolean;
 }
 
@@ -23,6 +24,7 @@ export default function ChapterEditor({
   onUpdatePhotoCaption,
   onUpdatePhotoTag,
   onOpenDrivePicker,
+  onOpenProjectPhotos,
   isCompletionReport,
 }: Props) {
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -117,6 +119,18 @@ export default function ChapterEditor({
             </svg>
             選択
           </button>
+          {onOpenProjectPhotos && (
+            <button
+              type="button"
+              onClick={onOpenProjectPhotos}
+              className="flex-1 flex items-center justify-center gap-2 bg-white border-2 border-gray-300 text-gray-700 py-3 px-3 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors active:scale-[0.98]"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" />
+              </svg>
+              案件写真
+            </button>
+          )}
           {onOpenDrivePicker && (
             <button
               type="button"

@@ -68,7 +68,7 @@ export async function POST(request: Request) {
         project_id: reportData.project_id,
         file_url: photo.file_url,
         file_path: photo.file_path,
-        category: photo.category || '状況',
+        category: photo.category || '現状',
         caption: photo.caption || null,
         sort_order: index,
       })

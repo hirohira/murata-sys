@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import ProjectStatusBadge from '@/components/projects/ProjectStatusBadge';
 import DriveFolderButton from '@/components/projects/DriveFolderButton';
+import ProjectPhotos from '@/components/projects/ProjectPhotos';
 import type { Project, DailyReport, ProjectStatus } from '@/types';
 
 type Tab = 'overview' | 'reports' | 'photos';
@@ -233,13 +234,7 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {activeTab === 'photos' && (
-        <div className="card">
-          <div className="p-12 text-center">
-            <p className="text-gray-500">写真は日報入力時にアップロードされます</p>
-          </div>
-        </div>
-      )}
+      {activeTab === 'photos' && <ProjectPhotos project={project} />}
     </div>
   );
 }

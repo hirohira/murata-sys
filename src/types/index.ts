@@ -18,7 +18,10 @@ export type AudienceType = '一般施主向け' | '建築関係者向け';
 
 export type Weather = '晴' | '曇' | '雨' | '雪';
 
-export type PhotoCategory = '全体' | '状況' | '原因' | '対策';
+export type PhotoCategory = '現状' | '原因' | '対策' | 'その他';
+
+/** 写真の撮り方（使用頻度の集計用） camera=区分を押して撮影 / select=まとめて選択 / inapp=アプリ内カメラ */
+export type CaptureMethod = 'camera' | 'select' | 'inapp';
 
 export type ReportType = '調査報告書' | '完了報告書';
 
@@ -91,6 +94,14 @@ export interface ReportPhoto {
   ai_classification: string | null;
   sort_order: number;
   created_at: string;
+  capture_method?: CaptureMethod | null;
+  taken_at?: string | null;
+  width?: number | null;
+  height?: number | null;
+  created_by?: string | null;
+  drive_file_id?: string | null;
+  drive_file_url?: string | null;
+  drive_file_name?: string | null;
 }
 
 export interface ReportFinding {

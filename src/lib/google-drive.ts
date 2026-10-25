@@ -317,3 +317,23 @@ export function tagFromFolderPath(folderPath: string): 'before' | 'after' | unde
   if (/04_施工後|05_完成/.test(folderPath)) return 'after';
   return undefined;
 }
+
+/** ファイルを別のフォルダへ移し、名前を変える（写真の区分を付け替えたとき） */
+export async function moveFile(params: { fileId: string; newParentId: string; newName?: string }): Promise<void> {
+  const drive = getDrive();
+  const meta = await drive.files.get({ ...ALL_DRIVES, fileId: params.fileId, fields: 'parents' });
+  const oldParents = (meta.data.parents ?? []).join(',');
+  await drive.files.update({
+    ...ALL_DRIVES,
+    fileId: params.fileId,
+    addParents: params.newParentId,
+    removeParents: oldParents || undefined,
+    requestBody: params.newName ? { name: params.newName } : {},
+    fields: 'id',
+  });
+}
+
+/** ファイルをゴミ箱へ移す（完全には削除しない。ドライブのゴミ箱から戻せる） */
+export async function trashFile(fileId: string): Promise<void> {
+  await getDrive().files.update({ ...ALL_DRIVES, fileId, requestBody: { trashed: true }, fields: 'id' });
+}

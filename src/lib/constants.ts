@@ -7,6 +7,7 @@ import type {
   AudienceType,
   Weather,
   PhotoCategory,
+  CaptureMethod,
   ReportType,
   ReportStatus,
   FindingSeverity,
@@ -41,7 +42,22 @@ export const WEATHERS: { value: Weather; emoji: string; label: string }[] = [
   { value: '雪', emoji: '❄️', label: '雪' },
 ];
 
-export const PHOTO_CATEGORIES: PhotoCategory[] = ['全体', '状況', '原因', '対策'];
+export const PHOTO_CATEGORIES: PhotoCategory[] = ['現状', '原因', '対策', 'その他'];
+
+/** 区分ごとの表示（撮影ボタンの色・説明） */
+export const PHOTO_CATEGORY_STYLE: Record<PhotoCategory, { color: string; hint: string }> = {
+  '現状': { color: '#1F6FB2', hint: '全体・不具合の様子' },
+  '原因': { color: '#C62828', hint: '原因と考えられる箇所' },
+  '対策': { color: '#2E7D32', hint: '対策・施工の様子' },
+  'その他': { color: '#616B74', hint: '上記以外' },
+};
+
+/** 写真の撮り方（運用後に使用頻度の低いものを削除する前提で集計する） */
+export const CAPTURE_METHODS: { key: CaptureMethod; label: string; description: string }[] = [
+  { key: 'camera', label: '区分を押して撮影', description: '区分のボタンを押すとスマホのカメラが開き、1枚撮影' },
+  { key: 'select', label: 'まとめて選択', description: 'カメラで撮っておいた写真を、区分を選んでまとめて選択' },
+  { key: 'inapp', label: 'アプリ内カメラ', description: '画面内のカメラで、区分を切り替えながら連続撮影' },
+];
 
 export const STATUS_COLORS: Record<ProjectStatus, { bg: string; text: string }> = {
   '調査中': { bg: 'bg-amber-100', text: 'text-amber-800' },
@@ -52,10 +68,10 @@ export const STATUS_COLORS: Record<ProjectStatus, { bg: string; text: string }> 
 };
 
 export const CATEGORY_COLORS: Record<PhotoCategory, { bg: string; text: string }> = {
-  '全体': { bg: 'bg-blue-100', text: 'text-blue-800' },
-  '状況': { bg: 'bg-orange-100', text: 'text-orange-800' },
+  '現状': { bg: 'bg-blue-100', text: 'text-blue-800' },
   '原因': { bg: 'bg-red-100', text: 'text-red-800' },
   '対策': { bg: 'bg-green-100', text: 'text-green-800' },
+  'その他': { bg: 'bg-gray-100', text: 'text-gray-700' },
 };
 
 export const REPORT_TYPES: ReportType[] = ['調査報告書', '完了報告書'];

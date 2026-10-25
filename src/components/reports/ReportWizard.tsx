@@ -6,6 +6,7 @@ import Link from 'next/link';
 import WizardStepper from '@/components/reports/WizardStepper';
 import ChapterEditor from '@/components/reports/ChapterEditor';
 import DrivePhotoPicker from '@/components/reports/DrivePhotoPicker';
+import ProjectPhotoPicker from '@/components/reports/ProjectPhotoPicker';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import type {
   Project,
@@ -1144,6 +1145,7 @@ function Step3Chapters({
 }) {
   const activeChapter = chapters[activeChapterIdx];
   const [drivePickerOpen, setDrivePickerOpen] = useState(false);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
   const range = (() => {
@@ -1394,8 +1396,18 @@ function Step3Chapters({
                 onUpdatePhotoCaption={onUpdatePhotoCaption}
                 onUpdatePhotoTag={onUpdatePhotoTag}
                 onOpenDrivePicker={projectId ? () => setDrivePickerOpen(true) : undefined}
+                onOpenProjectPhotos={projectId ? () => setProjectPickerOpen(true) : undefined}
                 isCompletionReport={isCompletionReport}
               />
+              {projectPickerOpen && (
+                <ProjectPhotoPicker
+                  projectId={projectId}
+                  chapterTitle={activeChapter.title}
+                  usedPaths={chapters.flatMap((c) => c.photos.map((p) => p.path || '')).filter(Boolean)}
+                  onClose={() => setProjectPickerOpen(false)}
+                  onImported={(photos) => onAddImportedPhotos(activeChapter.id, photos)}
+                />
+              )}
               {drivePickerOpen && (
                 <DrivePhotoPicker
                   projectId={projectId}

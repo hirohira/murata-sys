@@ -69,7 +69,7 @@ function NewDailyReportContent() {
       id,
       file,
       preview,
-      category: '状況' as PhotoCategory,
+      category: '現状' as PhotoCategory,
       caption: '',
     };
     setPhotos((prev) => [...prev, entry]);
