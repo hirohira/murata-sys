@@ -44,9 +44,14 @@ export default function ReportsPage() {
           <h2 className="text-lg font-bold text-gray-900">報告書一覧</h2>
           <p className="text-sm text-gray-500">{reports.length} 件の報告書</p>
         </div>
-        <Link href="/reports/new" className="btn btn-primary btn-sm">
-          + 新規作成
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/reports/quick" className="btn btn-primary btn-sm">
+            かんたん作成
+          </Link>
+          <Link href="/reports/new" className="btn btn-secondary btn-sm">
+            + 詳しく作成
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}

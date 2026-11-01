@@ -518,6 +518,24 @@ function cameraHelp(errName: string | undefined): string[] {
   return [`カメラを起動できませんでした（${errName || 'エラー'}）。`];
 }
 
+const MAX_SHOT_EDGE = 2400;
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('時間切れ')), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
+}
+
 function InAppCamera({ onShot }: { onShot: (blob: Blob, category: PhotoCategory) => void }) {
   const [category, setCategory] = useState<PhotoCategory>('現状');
   const [running, setRunning] = useState(false);
@@ -527,6 +545,8 @@ function InAppCamera({ onShot }: { onShot: (blob: Blob, category: PhotoCategory)
   const [torchOn, setTorchOn] = useState(false);
   const [count, setCount] = useState(0);
   const [flash, setFlash] = useState(false);
+  const [shooting, setShooting] = useState(false);
+  const [shotError, setShotError] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const trackRef = useRef<MediaStreamTrack | null>(null);
@@ -592,34 +612,63 @@ function InAppCamera({ onShot }: { onShot: (blob: Blob, category: PhotoCategory)
     }
   };
 
-  const grabFrame = (): Promise<Blob | null> => {
-    const video = videoRef.current;
-    if (!video) return Promise.resolve(null);
+  // 撮った画像は長辺 MAX_SHOT_EDGE に縮めてから渡す（大きすぎる画像は端末によって変換に失敗するため）
+  const drawScaled = (src: CanvasImageSource, w: number, h: number): Promise<Blob | null> => {
+    if (!w || !h) return Promise.resolve(null);
+    const scale = Math.min(1, MAX_SHOT_EDGE / Math.max(w, h));
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d')?.drawImage(video, 0, 0);
-    return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92));
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return Promise.resolve(null);
+    ctx.drawImage(src, 0, 0, canvas.width, canvas.height);
+    return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.9));
+  };
+
+  /** 映像の1コマを取る。映像の準備ができるまで少し待つ */
+  const grabFrame = async (): Promise<Blob | null> => {
+    const video = videoRef.current;
+    if (!video) return null;
+    for (let i = 0; i < 15 && (!video.videoWidth || video.readyState < 2); i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return drawScaled(video, video.videoWidth, video.videoHeight);
+  };
+
+  /** 高画質の静止画撮影（Androidの一部）。止まったり失敗したりする機種があるので時間を区切る */
+  const takeStill = async (): Promise<Blob | null> => {
+    const cap = captureRef.current;
+    if (!cap?.takePhoto) return null;
+    try {
+      const photo = await withTimeout<Blob>(cap.takePhoto(), 4000);
+      const bmp = await withTimeout<ImageBitmap>(createImageBitmap(photo), 4000);
+      const out = await drawScaled(bmp, bmp.width, bmp.height);
+      bmp.close?.();
+      return out;
+    } catch {
+      // この機種では静止画撮影を使わず、以後は映像の1コマで撮る
+      captureRef.current = null;
+      return null;
+    }
   };
 
   const shoot = async () => {
-    if (!streamRef.current) return;
+    if (!streamRef.current || shooting) return;
+    setShooting(true);
+    setShotError('');
     setFlash(true);
     setTimeout(() => setFlash(false), 120);
     const cat = category;
-    let blob: Blob | null = null;
-    // Androidの一部では高画質の静止画撮影が使える。使えなければ映像の1コマを保存
-    if (captureRef.current?.takePhoto) {
-      try {
-        blob = await captureRef.current.takePhoto();
-      } catch {
-        blob = null;
-      }
+    try {
+      const blob = (await takeStill()) ?? (await grabFrame());
+      if (!blob) throw new Error('画像を取り込めませんでした');
+      setCount((n) => n + 1);
+      onShot(blob, cat);
+    } catch (e) {
+      setShotError(`撮影に失敗しました（${e instanceof Error ? e.message : 'エラー'}）。もう一度シャッターを押してください。`);
+    } finally {
+      setShooting(false);
     }
-    if (!blob) blob = await grabFrame();
-    if (!blob) return;
-    setCount((n) => n + 1);
-    onShot(blob, cat);
   };
 
   const applyAdvanced = (constraint: Record<string, unknown>) => {
@@ -686,6 +735,7 @@ function InAppCamera({ onShot }: { onShot: (blob: Blob, category: PhotoCategory)
             <button
               type="button"
               onClick={shoot}
+              disabled={shooting}
               aria-label={`${category}を撮影`}
               className="h-16 w-16 rounded-full border-4 border-white shadow-lg ring-2 ring-gray-300 transition-transform active:scale-95"
               style={{ background: PHOTO_CATEGORY_STYLE[category].color }}
@@ -710,6 +760,11 @@ function InAppCamera({ onShot }: { onShot: (blob: Blob, category: PhotoCategory)
               />
               <span className="w-12 text-right tabular-nums">{zoom.toFixed(1)}倍</span>
             </label>
+          )}
+          {shotError && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+              {shotError}
+            </p>
           )}
           <button type="button" onClick={stop} className="btn btn-secondary btn-sm w-full">
             カメラを止める
