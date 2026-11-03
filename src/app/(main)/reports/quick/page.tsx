@@ -240,8 +240,10 @@ function QuickReport() {
                     <strong>「現状」「原因」「対策」「その他」</strong>フォルダに入れてください。
                   </p>
                   <p>
-                    原因が2つ以上あるときは「原因」フォルダの中に<strong>「原因1」「原因2」</strong>
-                    のフォルダを作るか、ファイル名の頭を「原因1_」「原因2_」にすると、その原因のページに入ります。
+                    原因や対策ごとにページを分けたいときは、「原因」フォルダの中に
+                    <strong>「原因（シーリングの劣化）」「原因（クラック）」</strong>
+                    のように項目名を付けたフォルダを作って写真を入れてください。項目名がそのままページの見出しになります。
+                    「原因1」「原因2」のような番号だけのフォルダ、ファイル名の頭を「原因1_」にする形も使えます。
                   </p>
                   {info.photoFolderUrl && (
                     <a href={info.photoFolderUrl} target="_blank" rel="noreferrer" className="inline-block text-murata-primary underline">

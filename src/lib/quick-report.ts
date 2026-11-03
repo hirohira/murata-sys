@@ -34,6 +34,7 @@ export interface SourcePhoto {
   source: 'app' | 'drive';
   category: PhotoCategory;
   group: number | null; // 「原因1」「原因2」などの番号
+  topic: string | null; // フォルダ名に書いた項目名（例：原因（シーリングの劣化） → シーリングの劣化）
   tag?: PhotoTag;
   label: string; // フォルダ・ファイル名（AIへの手がかり）
   takenAt: string | null;
@@ -45,27 +46,44 @@ export interface SourcePhoto {
   driveFileId?: string;
 }
 
-const CAT_RE = /(現状|原因|対策|その他)\s*([0-9０-９]{1,2})?/;
+const CATS = '(現状|原因|対策|その他)';
+const NUM = '([0-9０-９]{1,2})?';
+// フォルダ名：「原因」「原因2」「原因（シーリングの劣化）」「原因2（クラック）」「原因_シーリングの劣化」「原因：雨樋」
+const FOLDER_RE = new RegExp(`^${CATS}\\s*${NUM}\\s*(?:[（(]\\s*([^）)]+?)\\s*[）)]|[_\\-－・:：\\s]+(.+))?$`);
+// ファイル名の頭：「原因1_」「原因（クラック）_」「原因（クラック）」の後に名前が続く形
+const FILE_RE = new RegExp(`^${CATS}\\s*${NUM}\\s*(?:[（(]\\s*([^）)]+?)\\s*[）)][_\\-\\s・．.]?|[_\\-\\s・．.])`);
 
 function toHalfWidth(s: string) {
   return s.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
 }
 
-/** フォルダ名・ファイル名から区分と番号を読む（ファイル名は先頭の「原因1_」の形だけを見る） */
-export function categoryFromDrivePath(folderPath: string, fileName: string): { category: PhotoCategory | null; group: number | null } {
+/**
+ * フォルダ名・ファイル名から区分・番号・項目名を読む
+ * 例：03_現場調査/原因/原因（シーリングの劣化）/a.jpg → 原因・項目「シーリングの劣化」
+ *     03_現場調査/原因2/a.jpg → 原因・番号2
+ *     原因1_棟板金.jpg → 原因・番号1（ファイル名は頭の形だけを見る）
+ */
+export function categoryFromDrivePath(
+  folderPath: string,
+  fileName: string
+): { category: PhotoCategory | null; group: number | null; topic: string | null } {
   let category: PhotoCategory | null = null;
   let group: number | null = null;
+  let topic: string | null = null;
   for (const seg of folderPath.split('/')) {
-    const m = seg.match(new RegExp(`^${CAT_RE.source}$`));
+    const m = seg.trim().match(FOLDER_RE);
     if (m) {
       category = m[1] as PhotoCategory;
       if (m[2]) group = Number(toHalfWidth(m[2]));
+      const t = (m[3] || m[4] || '').trim();
+      if (t) topic = t;
     }
   }
-  const fm = fileName.match(/^(現状|原因|対策|その他)\s*([0-9０-９]{1,2})?[_\-\s・．.]/);
+  const fm = fileName.match(FILE_RE);
   if (fm) {
     category = fm[1] as PhotoCategory;
     if (fm[2]) group = Number(toHalfWidth(fm[2]));
+    if (fm[3]?.trim()) topic = fm[3].trim();
   }
   // 完了報告書用：05_施工写真の施工前・施工後
   if (!category) {
@@ -73,7 +91,7 @@ export function categoryFromDrivePath(folderPath: string, fileName: string): { c
     if (tag === 'before') category = '現状';
     if (tag === 'after') category = '対策';
   }
-  return { category, group };
+  return { category, group, topic };
 }
 
 /** 写真の区分フォルダ（03_現場調査/現状・原因・対策・その他）を用意して、そのURLを返す */
@@ -105,6 +123,7 @@ export async function collectPhotos(
       source: 'app',
       category: (PHOTO_CATEGORIES as string[]).includes(r.category) ? r.category : 'その他',
       group: null,
+      topic: null,
       label: r.drive_file_name || r.caption || '',
       takenAt: r.taken_at || r.created_at,
       url: r.file_url,
@@ -127,12 +146,13 @@ export async function collectPhotos(
         const files = await listImagesRecursive(folderId, name);
         for (const f of files) {
           if (knownDriveIds.has(f.id)) continue; // アプリから上げた写真と同じもの
-          const { category, group } = categoryFromDrivePath(f.folderPath, f.name);
+          const { category, group, topic } = categoryFromDrivePath(f.folderPath, f.name);
           photos.push({
             key: '',
             source: 'drive',
             category: category ?? 'その他',
             group,
+            topic,
             tag: tagFromFolderPath(f.folderPath),
             label: `${f.folderPath}/${f.name}`,
             takenAt: f.modifiedTime ?? null,
@@ -152,6 +172,7 @@ export async function collectPhotos(
     (a, b) =>
       order(a.category) - order(b.category) ||
       (a.group ?? 0) - (b.group ?? 0) ||
+      (a.topic ?? '').localeCompare(b.topic ?? '') ||
       (a.takenAt ?? '').localeCompare(b.takenAt ?? '')
   );
   photos.forEach((p, i) => (p.key = `P${i + 1}`));
@@ -162,7 +183,7 @@ export async function collectPhotos(
 export function summarizePhotos(photos: SourcePhoto[]) {
   const map = new Map<string, number>();
   for (const p of photos) {
-    const k = p.group ? `${p.category}${p.group}` : p.category;
+    const k = `${p.category}${p.group ?? ''}${p.topic ? `（${p.topic}）` : ''}`;
     map.set(k, (map.get(k) ?? 0) + 1);
   }
   return Array.from(map.entries()).map(([label, count]) => ({ label, count }));
@@ -212,7 +233,7 @@ export async function planReport(params: {
       ? photos
           .map(
             (p) =>
-              `${p.key}｜区分=${p.category}${p.group ? p.group : ''}${p.tag ? `（${p.tag === 'before' ? '施工前' : '施工後'}）` : ''}｜${p.label || '名前なし'}${p.takenAt ? `｜${p.takenAt.slice(0, 16).replace('T', ' ')}` : ''}`
+              `${p.key}｜区分=${p.category}${p.group ? p.group : ''}${p.topic ? `｜項目=${p.topic}` : ''}${p.tag ? `（${p.tag === 'before' ? '施工前' : '施工後'}）` : ''}｜${p.label || '名前なし'}${p.takenAt ? `｜${p.takenAt.slice(0, 16).replace('T', ' ')}` : ''}`
           )
           .join('\n')
       : '（写真なし）';
@@ -241,6 +262,7 @@ ${templateText}
 【決まり】
 - 章は上の順番で並べる。内容がない章は出さない。
 - 原因が複数あるときは、原因ごとに key「cause」の章を分ける（題名の例：「原因の特定①　棟板金の浮き」）。対策も原因ごとに分けてよい（key「measures」）。
+- 写真に「項目」があるときは、項目ごとに章を1つ作り、その項目の写真はその章にまとめる。題名には項目名をそのまま入れる（例：区分=原因・項目=シーリングの劣化 →「原因の特定　シーリングの劣化」、区分=対策・項目=シーリング打ち替え →「必要な対策　シーリング打ち替え」）。シナリオにその項目の説明があれば、その章の文章に使う。
 - 写真の割り当て：区分「現状」→全体の把握・不具合の章、「原因」→原因の章（「原因1」「原因2」の番号があれば、その番号の原因の章へ）、「対策」→対策・提案の章、「その他」→内容に合う章。番号がない原因の写真が複数あるときは、シナリオの原因の順番と撮影順を手がかりに割り当てる。
 - 1つの写真は1つの章にだけ使う。1章あたり写真は${MAX_PHOTOS_PER_CHAPTER}枚まで。合わない写真は使わなくてよい。
 - 各写真にキャプション（15字以内。例：「棟板金の浮き」）を付ける。
@@ -305,6 +327,14 @@ export function buildChapters(params: {
       .slice(0, MAX_PHOTOS_PER_CHAPTER),
   }));
 
+  // 章の写真がすべて同じ項目（フォルダ名の項目）なら、題名にその項目名が入っているようにする
+  const withTopic = (title: string, chPhotos: { id: string }[]) => {
+    const topics = new Set(chPhotos.map((ph) => byKey.get(ph.id)?.topic).filter(Boolean));
+    if (topics.size !== 1) return title;
+    const topic = Array.from(topics)[0] as string;
+    return title.includes(topic) ? title : `${title}　${topic}`;
+  };
+
   let failed = 0;
   const toChapterPhoto = (id: string, caption: string | undefined, i: number): ChapterPhoto | null => {
     const src = byKey.get(id)!;
@@ -344,7 +374,7 @@ export function buildChapters(params: {
     for (const c of remaining.filter((x) => x.key === t.key)) {
       remaining.splice(remaining.indexOf(c), 1);
       const ps = c.photos.map((p, i) => toChapterPhoto(p.id, p.caption, i)).filter((p): p is ChapterPhoto => !!p);
-      chapters.push(makeChapter(t.key, c.title?.trim() || t.title, (c.description || '').trim(), ps, true));
+      chapters.push(makeChapter(t.key, withTopic(c.title?.trim() || t.title, c.photos), (c.description || '').trim(), ps, true));
     }
   }
   // ひな形にないkeyの章は、工事日数・会社案内の前に入れる
