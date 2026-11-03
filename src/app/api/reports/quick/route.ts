@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getCurrentUser, permissionError } from '@/lib/current-user';
-import { saveReportToDrive } from '@/lib/project-drive';
 import { isDriveConfigured } from '@/lib/google-drive';
-import { buildChapters, collectPhotos, planReport, summarizePhotos } from '@/lib/quick-report';
+import { collectPhotos, planReport, summarizePhotos, usedPhotoKeys } from '@/lib/quick-report';
 import type { Project, ReportType } from '@/types';
 
 export const maxDuration = 60;
@@ -39,8 +38,9 @@ export async function GET(req: Request) {
   });
 }
 
-// POST /api/reports/quick — シナリオと写真から報告書を作り、PowerPointをドライブに保存する
+// POST /api/reports/quick — 手順1：写真を集め、AIが章立て・写真の割り当て・文章を決める
 // body: { project_id, report_type, scenario }
+// 返り値の photos は報告書に使う写真だけ。ドライブの写真は画面側で取り込んでから finalize に渡す
 export async function POST(req: Request) {
   const me = await getCurrentUser();
   const denied = permissionError(me);
@@ -60,71 +60,17 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-
     const plan = await planReport({ project, reportType, scenario, photos });
-    const { chapters, usedPhotos, failedPhotos } = await buildChapters({
-      supabase,
-      project,
-      userId: me!.id,
-      reportType,
-      plan,
-      photos,
-    });
-
-    const constructionName = plan.construction_name?.trim() || `${project.site_name}`;
-    const { data: report, error } = await supabase
-      .from('reports')
-      .insert({
-        project_id: project.id,
-        report_type: reportType,
-        title: `${constructionName} ${reportType}`,
-        summary: scenario || null,
-        findings: [],
-        chapters,
-        meta: {
-          input_pattern: 'office',
-          survey_date: new Date().toISOString().slice(0, 10),
-          addressee: `${project.customer_name}　様`,
-          construction_name: constructionName,
-          purpose: plan.purpose?.trim() || '',
-          staff_name: me!.profile.name,
-        },
-        generated_by_ai: true,
-        status: '下書き',
-        created_by: me!.id,
-      })
-      .select('id')
-      .single();
-    if (error || !report) throw new Error(error?.message || '報告書を保存できませんでした');
-
-    let drive: { url: string; name: string } | null = null;
-    let driveError: string | null = null;
-    if (isDriveConfigured()) {
-      try {
-        const saved = await saveReportToDrive(supabase, report.id);
-        drive = { url: saved.url, name: saved.name };
-      } catch (e) {
-        console.error('Quick report drive save failed:', e);
-        driveError = e instanceof Error ? e.message : 'ドライブへの保存に失敗しました';
-      }
-    }
-
-    return NextResponse.json(
-      {
-        data: {
-          id: report.id,
-          chapters: chapters.filter((c) => !['cover', 'schedule', 'company'].includes(c.key)).length,
-          photosAvailable: photos.length,
-          photosUsed: usedPhotos,
-          photosFailed: failedPhotos,
-          drive,
-          driveError,
-        },
+    const used = new Set(usedPhotoKeys(plan, photos));
+    return NextResponse.json({
+      data: {
+        plan,
+        photos: photos.filter((p) => used.has(p.key)),
+        photosAvailable: photos.length,
       },
-      { status: 201 }
-    );
+    });
   } catch (e) {
-    console.error('Quick report failed:', e);
+    console.error('Quick report plan failed:', e);
     return NextResponse.json({ error: e instanceof Error ? e.message : '報告書の作成に失敗しました' }, { status: 500 });
   }
 }

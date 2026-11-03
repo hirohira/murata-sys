@@ -13,7 +13,6 @@ import type { ChapterPhoto, PhotoCategory, PhotoTag, Project, ReportChapter, Rep
 import { PHOTO_CATEGORIES, getChapterTemplate } from '@/lib/constants';
 import {
   ensureFolder,
-  fetchImage,
   findChild,
   FOLDER_MIME,
   isDriveConfigured,
@@ -82,7 +81,7 @@ export async function ensureCategoryFolders(supabase: Supabase, project: Project
   const site = await ensureProjectDriveFolder(supabase, project);
   const parent = await ensureFolder(site.id, PHOTO_DRIVE_PARENT);
   for (const c of PHOTO_CATEGORIES) await ensureFolder(parent, c);
-  return { siteFolderUrl: site.url, photoFolderId: parent, photoFolderUrl: `https://drive.google.com/drive/folders/${parent}` };
+  return { siteFolderId: site.id, siteFolderUrl: site.url, photoFolderId: parent, photoFolderUrl: `https://drive.google.com/drive/folders/${parent}` };
 }
 
 /** 報告書に使える写真を集める */
@@ -120,12 +119,12 @@ export async function collectPhotos(
     try {
       const folders = await ensureCategoryFolders(supabase, project);
       photoFolderUrl = folders.photoFolderUrl;
-      const site = await ensureProjectDriveFolder(supabase, project);
       const sources = reportType === '完了報告書' ? PHOTO_SOURCE_FOLDERS : [PHOTO_DRIVE_PARENT];
       for (const name of sources) {
-        const folder = await findChild(site.id, name, FOLDER_MIME);
-        if (!folder?.id) continue;
-        const files = await listImagesRecursive(folder.id, name);
+        const folderId =
+          name === PHOTO_DRIVE_PARENT ? folders.photoFolderId : (await findChild(folders.siteFolderId, name, FOLDER_MIME))?.id;
+        if (!folderId) continue;
+        const files = await listImagesRecursive(folderId, name);
         for (const f of files) {
           if (knownDriveIds.has(f.id)) continue; // アプリから上げた写真と同じもの
           const { category, group } = categoryFromDrivePath(f.folderPath, f.name);
@@ -189,6 +188,8 @@ function extractJson(text: string): unknown {
   if (start < 0 || end <= start) throw new Error('AIの応答を読み取れませんでした');
   return JSON.parse(text.slice(start, end + 1));
 }
+
+export type { AiResult };
 
 export async function planReport(params: {
   project: Project;
@@ -266,73 +267,48 @@ ${templateText}
   return parsed;
 }
 
-// ─── 写真の取り込みと章の組み立て ─────────────────────────
+// ─── 章の組み立て ─────────────────────────
+// 1回の処理が長くなりすぎないよう、ドライブ写真の取り込みは画面側から1枚ずつ行い、
+// 取り込んだ写真の場所（url・path）を受け取ってから章を組み立てる
 
-/** ドライブの写真を報告書用に取り込み（長辺2000px）、Storage のURLを返す */
-async function importDrivePhoto(supabase: Supabase, project: Project, userId: string, fileId: string) {
-  const image = await fetchImage(fileId, 2000);
-  const ext = image.mimeType.includes('png') ? 'png' : 'jpg';
-  const path = `${userId}/${project.id}/drive_${fileId}.${ext}`;
-  const { error } = await supabase.storage
-    .from('report-photos')
-    .upload(path, image.data, { contentType: image.mimeType, upsert: true, cacheControl: '3600' });
-  if (error) throw new Error(error.message);
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from('report-photos').getPublicUrl(path);
-  return { url: publicUrl, path };
-}
-
-async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let i = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      while (i < items.length) {
-        const idx = i++;
-        out[idx] = await fn(items[idx]);
+export function usedPhotoKeys(plan: AiResult, photos: SourcePhoto[]): string[] {
+  const keys = new Set(photos.map((p) => p.key));
+  const used: string[] = [];
+  for (const c of plan.chapters || []) {
+    let n = 0;
+    for (const ph of c.photos || []) {
+      if (keys.has(ph.id) && !used.includes(ph.id) && n < MAX_PHOTOS_PER_CHAPTER) {
+        used.push(ph.id);
+        n++;
       }
-    })
-  );
-  return out;
+    }
+  }
+  return used;
 }
 
-export async function buildChapters(params: {
-  supabase: Supabase;
-  project: Project;
-  userId: string;
+export function buildChapters(params: {
+  project: Pick<Project, 'building_type' | 'construction_type'>;
   reportType: ReportType;
   plan: AiResult;
   photos: SourcePhoto[];
-}): Promise<{ chapters: ReportChapter[]; usedPhotos: number; failedPhotos: number }> {
-  const { supabase, project, userId, reportType, plan, photos } = params;
+  /** 写真の場所。取り込めなかった写真は null */
+  resolve: (key: string) => { url: string; path: string } | null;
+}): { chapters: ReportChapter[]; usedPhotos: number; failedPhotos: number } {
+  const { project, reportType, plan, photos, resolve } = params;
   const byKey = new Map(photos.map((p) => [p.key, p]));
   const used = new Set<string>();
 
-  // AIが選んだ写真（重複・存在しないIDは除く）
-  const aiChapters = plan.chapters.map((c) => ({
+  const aiChapters = (plan.chapters || []).map((c) => ({
     ...c,
     photos: (c.photos || [])
       .filter((ph) => byKey.has(ph.id) && !used.has(ph.id) && used.add(ph.id))
       .slice(0, MAX_PHOTOS_PER_CHAPTER),
   }));
 
-  // ドライブの写真だけ取り込む
-  const driveKeys = Array.from(used).filter((k) => byKey.get(k)!.source === 'drive');
-  const imported = new Map<string, { url: string; path: string } | null>();
-  await mapLimit(driveKeys, 4, async (k) => {
-    try {
-      imported.set(k, await importDrivePhoto(supabase, project, userId, byKey.get(k)!.driveFileId!));
-    } catch (e) {
-      console.error('Quick report photo import failed:', k, e);
-      imported.set(k, null);
-    }
-  });
-
   let failed = 0;
   const toChapterPhoto = (id: string, caption: string | undefined, i: number): ChapterPhoto | null => {
     const src = byKey.get(id)!;
-    const loc = src.source === 'app' ? { url: src.url!, path: src.path! } : imported.get(id);
+    const loc = resolve(id);
     if (!loc) {
       failed++;
       return null;
@@ -347,50 +323,38 @@ export async function buildChapters(params: {
     };
   };
 
-  // ひな形の順に並べ、AIの章をその位置に入れる（同じkeyの章が複数あれば続けて入れる）
   const template = getChapterTemplate(reportType, project.building_type, project.construction_type);
   const chapters: ReportChapter[] = [];
-  const pushChapter = (key: string, title: string, description: string, chPhotos: ChapterPhoto[], ai: boolean) =>
-    chapters.push({
-      id: randomUUID(),
-      key,
-      title,
-      description,
-      photos: chPhotos,
-      ai_generated: ai,
-      sort_order: chapters.length,
-    });
+  const makeChapter = (key: string, title: string, description: string, chPhotos: ChapterPhoto[], ai: boolean): ReportChapter => ({
+    id: randomUUID(),
+    key,
+    title,
+    description,
+    photos: chPhotos,
+    ai_generated: ai,
+    sort_order: 0,
+  });
 
   const remaining = [...aiChapters];
   for (const t of template) {
     if (['cover', 'schedule', 'company'].includes(t.key)) {
-      pushChapter(t.key, t.title, '', [], false);
+      chapters.push(makeChapter(t.key, t.title, '', [], false));
       continue;
     }
-    const matches = remaining.filter((c) => c.key === t.key);
-    for (const c of matches) {
+    for (const c of remaining.filter((x) => x.key === t.key)) {
       remaining.splice(remaining.indexOf(c), 1);
       const ps = c.photos.map((p, i) => toChapterPhoto(p.id, p.caption, i)).filter((p): p is ChapterPhoto => !!p);
-      pushChapter(t.key, c.title?.trim() || t.title, (c.description || '').trim(), ps, true);
+      chapters.push(makeChapter(t.key, c.title?.trim() || t.title, (c.description || '').trim(), ps, true));
     }
   }
-  // ひな形にないkeyの章は、会社案内などの固定ページの前に入れる
+  // ひな形にないkeyの章は、工事日数・会社案内の前に入れる
   for (const c of remaining) {
     const ps = c.photos.map((p, i) => toChapterPhoto(p.id, p.caption, i)).filter((p): p is ChapterPhoto => !!p);
+    const ch = makeChapter(c.key || 'custom', c.title || '追加の章', (c.description || '').trim(), ps, true);
     const at = chapters.findIndex((x) => x.key === 'schedule' || x.key === 'company');
-    const ch: ReportChapter = {
-      id: randomUUID(),
-      key: c.key || 'custom',
-      title: c.title || '追加の章',
-      description: (c.description || '').trim(),
-      photos: ps,
-      ai_generated: true,
-      sort_order: 0,
-    };
     if (at >= 0) chapters.splice(at, 0, ch);
     else chapters.push(ch);
   }
   chapters.forEach((c, i) => (c.sort_order = i));
-
   return { chapters, usedPhotos: used.size - failed, failedPhotos: failed };
 }

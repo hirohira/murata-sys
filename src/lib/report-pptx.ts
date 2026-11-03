@@ -24,6 +24,15 @@ export async function buildReportPptx(report: Report, opts: { worker?: string | 
     return cache.get(url)!;
   };
 
+  // 写真は先にまとめて並行で取得しておく（1枚ずつ待つと写真が多いときに時間切れになる）
+  const urls = new Set<string>();
+  for (const page of pages) {
+    for (const el of page.elements) {
+      if (el.kind === 'photo' && el.photo.url) urls.add(el.photo.url);
+    }
+  }
+  await Promise.all(Array.from(urls).map((u) => getImage(u)));
+
   for (const page of pages) {
     const slide = pptx.addSlide();
     for (const el of page.elements) {

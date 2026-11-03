@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import VoiceRecorder from '@/components/VoiceRecorder';
@@ -31,7 +31,7 @@ const EXAMPLE: Record<ReportType, string> = {
     '例）施工前は棟板金が浮き、雨水が入る状態だった。原因は下地の貫板の腐食。施工内容は、貫板を樹脂製に交換し、棟板金をビスで固定し直した。施工後は浮きがなくなり、シーリングも打ち替えた。',
 };
 
-const STEPS = ['写真を集めています', 'AIが章立てと文章を作っています', '写真を報告書に配置しています', 'PowerPointを作ってドライブに保存しています'];
+const STEPS = ['写真を集めて、AIが章立てと文章を作っています', 'ドライブの写真を報告書に取り込んでいます', '報告書を保存しています', 'PowerPointを作ってドライブに保存しています'];
 
 function QuickReport() {
   const params = useSearchParams();
@@ -45,7 +45,6 @@ function QuickReport() {
   const [step, setStep] = useState(0);
   const [error, setError] = useState('');
   const [result, setResult] = useState<Result | null>(null);
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     fetch('/api/projects')
@@ -69,30 +68,93 @@ function QuickReport() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(loadInfo, [projectId, reportType]);
 
-  useEffect(() => () => {
-    if (timer.current) clearInterval(timer.current);
-  }, []);
+  const [progress, setProgress] = useState('');
 
+  const postJson = async (url: string, body?: unknown) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const reason = res.status === 504 ? '時間内に終わりませんでした' : json.error;
+      throw new Error(reason || `失敗しました（${res.status}）`);
+    }
+    return json.data;
+  };
+
+  // 1回の処理が長くなりすぎないよう、4つの手順に分けて順に進める
   const run = async () => {
     if (!projectId) return;
     setRunning(true);
     setError('');
     setResult(null);
-    setStep(0);
-    timer.current = setInterval(() => setStep((s) => Math.min(s + 1, STEPS.length - 1)), 7000);
+    setProgress('');
+    let current = 0;
     try {
-      const res = await fetch('/api/reports/quick', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_id: projectId, report_type: reportType, scenario }),
+      // 手順1：写真を集め、AIが章立て・写真の割り当て・文章を決める
+      setStep((current = 0));
+      const planned = await postJson('/api/reports/quick', { project_id: projectId, report_type: reportType, scenario });
+      const photos: { key: string; source: string; driveFileId?: string; url?: string; path?: string }[] = planned.photos;
+
+      // 手順2：使うドライブの写真だけ、報告書用に取り込む（3枚ずつ）
+      setStep((current = 1));
+      const drivePhotos = photos.filter((p) => p.source === 'drive' && p.driveFileId);
+      let done = 0;
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < drivePhotos.length) {
+          const ph = drivePhotos[cursor++];
+          try {
+            const d = await postJson(`/api/projects/${projectId}/drive-photos`, { fileId: ph.driveFileId });
+            ph.url = d.url;
+            ph.path = d.path;
+          } catch {
+            // 取り込めなかった写真は外す（報告書は作る）
+          }
+          done++;
+          setProgress(`${done} / ${drivePhotos.length}枚`);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(3, drivePhotos.length) }, worker));
+      setProgress('');
+
+      // 手順3：報告書を保存
+      setStep((current = 2));
+      const saved = await postJson('/api/reports/quick/finalize', {
+        project_id: projectId,
+        report_type: reportType,
+        scenario,
+        plan: planned.plan,
+        photos,
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || `作成に失敗しました（${res.status}）`);
-      setResult(json.data);
+
+      // 手順4：PowerPointを作ってドライブに保存（失敗しても報告書はできている）
+      setStep((current = 3));
+      let drive: Result['drive'] = null;
+      let driveError: string | null = null;
+      if (info?.driveConfigured !== false) {
+        try {
+          const d = await postJson(`/api/reports/${saved.id}/drive`);
+          drive = { url: d.url, name: d.name };
+        } catch (e) {
+          driveError = e instanceof Error ? e.message : 'ドライブへの保存に失敗しました';
+        }
+      }
+
+      setResult({
+        id: saved.id,
+        chapters: saved.chapters,
+        photosAvailable: planned.photosAvailable,
+        photosUsed: saved.photosUsed,
+        photosFailed: saved.photosFailed,
+        drive,
+        driveError,
+      });
     } catch (e) {
-      setError(e instanceof Error ? e.message : '作成に失敗しました');
+      setError(`「${STEPS[current]}」の途中で失敗しました：${e instanceof Error ? e.message : 'エラー'}`);
     } finally {
-      if (timer.current) clearInterval(timer.current);
       setRunning(false);
     }
   };
@@ -226,10 +288,11 @@ function QuickReport() {
                   <li key={s} className={i < step ? 'text-gray-400' : i === step ? 'font-semibold text-murata-primary' : 'text-gray-400'}>
                     {i < step ? '✓ ' : i === step ? '… ' : '　 '}
                     {s}
+                    {i === step && progress ? `（${progress}）` : ''}
                   </li>
                 ))}
               </ol>
-              <p className="mt-2 text-xs text-gray-500">30秒〜1分ほどかかります。画面を閉じずにお待ちください。</p>
+              <p className="mt-2 text-xs text-gray-500">写真の枚数により1〜2分ほどかかります。画面を閉じずにお待ちください。</p>
             </div>
           )}
           {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
