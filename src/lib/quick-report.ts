@@ -13,6 +13,7 @@ import type { ChapterPhoto, PhotoCategory, PhotoTag, Project, ReportChapter, Rep
 import { PHOTO_CATEGORIES, getChapterTemplate } from '@/lib/constants';
 import {
   ensureFolder,
+  fetchThumbnail,
   findChild,
   FOLDER_MIME,
   isDriveConfigured,
@@ -44,6 +45,7 @@ export interface SourcePhoto {
   caption?: string | null;
   // drive の写真
   driveFileId?: string;
+  thumbnailLink?: string | null;
 }
 
 const CATS = '(現状|原因|対策|その他)';
@@ -60,6 +62,7 @@ function toHalfWidth(s: string) {
 /**
  * フォルダ名・ファイル名から区分・番号・項目名を読む
  * 例：03_現場調査/原因/原因（シーリングの劣化）/a.jpg → 原因・項目「シーリングの劣化」
+ *     03_現場調査/散水調査結果/a.jpg → 区分なし（その他）・項目「散水調査結果」
  *     03_現場調査/原因2/a.jpg → 原因・番号2
  *     原因1_棟板金.jpg → 原因・番号1（ファイル名は頭の形だけを見る）
  */
@@ -70,15 +73,20 @@ export function categoryFromDrivePath(
   let category: PhotoCategory | null = null;
   let group: number | null = null;
   let topic: string | null = null;
-  for (const seg of folderPath.split('/')) {
-    const m = seg.trim().match(FOLDER_RE);
+  let otherFolder: string | null = null;
+  for (const seg of folderPath.split('/').map((x) => x.trim()).filter(Boolean)) {
+    const m = seg.match(FOLDER_RE);
     if (m) {
       category = m[1] as PhotoCategory;
       if (m[2]) group = Number(toHalfWidth(m[2]));
       const t = (m[3] || m[4] || '').trim();
       if (t) topic = t;
+    } else if (!/^\d{2}_/.test(seg)) {
+      // 「散水調査」「散水調査結果」など、区分以外の名前のフォルダ（「03_現場調査」のような決まったフォルダは除く）
+      otherFolder = seg;
     }
   }
+  if (!topic && otherFolder) topic = otherFolder;
   const fm = fileName.match(FILE_RE);
   if (fm) {
     category = fm[1] as PhotoCategory;
@@ -157,6 +165,7 @@ export async function collectPhotos(
             label: `${f.folderPath}/${f.name}`,
             takenAt: f.modifiedTime ?? null,
             driveFileId: f.id,
+            thumbnailLink: f.thumbnailLink,
           });
         }
       }
@@ -183,7 +192,8 @@ export async function collectPhotos(
 export function summarizePhotos(photos: SourcePhoto[]) {
   const map = new Map<string, number>();
   for (const p of photos) {
-    const k = `${p.category}${p.group ?? ''}${p.topic ? `（${p.topic}）` : ''}`;
+    const k =
+      p.category === 'その他' && p.topic ? p.topic : `${p.category}${p.group ?? ''}${p.topic ? `（${p.topic}）` : ''}`;
     map.set(k, (map.get(k) ?? 0) + 1);
   }
   return Array.from(map.entries()).map(([label, count]) => ({ label, count }));
@@ -211,6 +221,34 @@ function extractJson(text: string): unknown {
 }
 
 export type { AiResult };
+
+const MAX_PHOTOS_WITH_IMAGE = 30;
+
+/** 写真ごとの画像ブロック（アプリの写真は公開URL、ドライブの写真はサムネイルを取得して渡す） */
+async function photoImageBlocks(photos: SourcePhoto[]): Promise<{ key: string; block: Anthropic.ImageBlockParam }[]> {
+  const out = await Promise.all(
+    photos.map(async (p) => {
+      if (p.source === 'app' && p.url) {
+        return { key: p.key, block: { type: 'image', source: { type: 'url', url: p.url } } as Anthropic.ImageBlockParam };
+      }
+      if (p.source === 'drive' && p.thumbnailLink) {
+        const t = await fetchThumbnail(p.thumbnailLink, 400);
+        if (!t) return null;
+        const mediaType = (['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(t.mimeType) ? t.mimeType : 'image/jpeg') as
+          | 'image/jpeg'
+          | 'image/png'
+          | 'image/gif'
+          | 'image/webp';
+        return {
+          key: p.key,
+          block: { type: 'image', source: { type: 'base64', media_type: mediaType, data: t.data.toString('base64') } } as Anthropic.ImageBlockParam,
+        };
+      }
+      return null;
+    })
+  );
+  return out.filter((x): x is { key: string; block: Anthropic.ImageBlockParam } => x !== null);
+}
 
 export async function planReport(params: {
   project: Project;
@@ -263,7 +301,12 @@ ${templateText}
 - 章は上の順番で並べる。内容がない章は出さない。
 - 原因が複数あるときは、原因ごとに key「cause」の章を分ける（題名の例：「原因の特定①　棟板金の浮き」）。対策も原因ごとに分けてよい（key「measures」）。
 - 写真に「項目」があるときは、項目ごとに章を1つ作り、その項目の写真はその章にまとめる。題名には項目名をそのまま入れる（例：区分=原因・項目=シーリングの劣化 →「原因の特定　シーリングの劣化」、区分=対策・項目=シーリング打ち替え →「必要な対策　シーリング打ち替え」）。シナリオにその項目の説明があれば、その章の文章に使う。
+- 「項目」が区分以外のフォルダ名（例：「散水調査」「散水調査結果」）のときは、その名前を手がかりに内容が合う章へ入れる（例：散水調査 → water_test の章。なければ不具合状況の後に key「custom」の章を作り、題名にフォルダ名を使う）。「散水調査」と「散水調査結果」のように続きもののフォルダは、同じ章か続けた章にする。
 - 写真の割り当て：区分「現状」→全体の把握・不具合の章、「原因」→原因の章（「原因1」「原因2」の番号があれば、その番号の原因の章へ）、「対策」→対策・提案の章、「その他」→内容に合う章。番号がない原因の写真が複数あるときは、シナリオの原因の順番と撮影順を手がかりに割り当てる。
+- 写真の画像も添付する（各画像の直前に ID を書いてある）。画像を見て次を守る。
+  ・ほぼ同じ写真（同じ場所を同じ距離・同じ向きから撮ったもの）は、いちばん分かりやすい1枚だけを使い、並べない。
+  ・遠景 → 近景 → アップのように、同じ箇所に段階的に近づいていく写真は重複ではない。原因の箇所が分かるよう、遠い順に並べて同じ章で使う。
+  ・キャプションは画像の内容に合わせる。画像と区分・フォルダ名が合わないように見えても、区分・フォルダ名を優先する。
 - 1つの写真は1つの章にだけ使う。1章あたり写真は${MAX_PHOTOS_PER_CHAPTER}枚まで。合わない写真は使わなくてよい。
 - 各写真にキャプション（15字以内。例：「棟板金の浮き」）を付ける。
 - 文章（description）：写真のある章は写真の下に添える1〜2文・70字以内。提案（proposal）・施工内容（work）・保証（warranty）の章は「工事内容として」の後に「・」で始まる箇条書きを含め200字以内。
@@ -273,13 +316,29 @@ ${templateText}
 【出力】次のJSONだけを返す（前置き・説明は不要）。
 {"construction_name":"...","purpose":"...","chapters":[{"key":"overview","title":"...","description":"...","photos":[{"id":"P1","caption":"..."}]}]}`;
 
+  // 写真の中身をAIに見せる（似た写真の除外・遠景からアップへの並び・キャプションのため）
+  const images = await photoImageBlocks(photos.slice(0, MAX_PHOTOS_WITH_IMAGE));
+  const content: Anthropic.ContentBlockParam[] = [{ type: 'text', text: user }];
+  if (images.length > 0) {
+    content.push({ type: 'text', text: '【写真の画像】' });
+    for (const im of images) {
+      content.push({ type: 'text', text: im.key });
+      content.push(im.block);
+    }
+  }
+
   const anthropic = new Anthropic({ apiKey });
-  const message = await anthropic.messages.create({
-    model: QUICK_MODEL,
-    max_tokens: 4000,
-    system,
-    messages: [{ role: 'user', content: user }],
-  });
+  const ask = (c: Anthropic.ContentBlockParam[]) =>
+    anthropic.messages.create({ model: QUICK_MODEL, max_tokens: 4000, system, messages: [{ role: 'user', content: c }] });
+  let message: Anthropic.Message;
+  try {
+    message = await ask(content);
+  } catch (e) {
+    // 画像が読めなかったなどで失敗したときは、画像なし（写真の一覧だけ）でやり直す
+    if (images.length === 0) throw e;
+    console.error('Quick report: retry without images', e);
+    message = await ask([{ type: 'text', text: user }]);
+  }
   const text = message.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text)

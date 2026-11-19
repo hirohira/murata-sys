@@ -219,6 +219,7 @@ export interface DrivePhoto {
   folderPath: string; // 例: "05_施工写真/01_施工前"
   modifiedTime?: string | null;
   hasThumbnail: boolean;
+  thumbnailLink?: string | null;
 }
 
 /** 指定フォルダ配下（サブフォルダ含む）の画像を一覧する */
@@ -235,7 +236,7 @@ export async function listImagesRecursive(
     const res = await drive.files.list({
       ...LIST_ALL_DRIVES,
       q: `'${q(folderId)}' in parents and trashed = false and (mimeType = '${FOLDER_MIME}' or mimeType contains 'image/')`,
-      fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, hasThumbnail)',
+      fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, hasThumbnail, thumbnailLink)',
       orderBy: 'folder,name',
       pageSize: 1000,
       pageToken,
@@ -252,6 +253,7 @@ export async function listImagesRecursive(
           folderPath,
           modifiedTime: f.modifiedTime,
           hasThumbnail: Boolean(f.hasThumbnail),
+          thumbnailLink: f.thumbnailLink ?? null,
         });
       }
     }
@@ -336,4 +338,17 @@ export async function moveFile(params: { fileId: string; newParentId: string; ne
 /** ファイルをゴミ箱へ移す（完全には削除しない。ドライブのゴミ箱から戻せる） */
 export async function trashFile(fileId: string): Promise<void> {
   await getDrive().files.update({ ...ALL_DRIVES, fileId, requestBody: { trashed: true }, fields: 'id' });
+}
+
+/** ドライブのサムネイル（小さい画像）を取得する。AIに写真の中身を見せるときに使う */
+export async function fetchThumbnail(thumbnailLink: string, size = 400): Promise<{ data: Buffer; mimeType: string } | null> {
+  try {
+    const token = await getAuthClient().getAccessToken();
+    const link = thumbnailLink.replace(/=s\d+$/, `=s${size}`);
+    const res = await fetch(link, { headers: { Authorization: `Bearer ${token.token}` } });
+    if (!res.ok) return null;
+    return { data: Buffer.from(await res.arrayBuffer()), mimeType: res.headers.get('content-type') || 'image/jpeg' };
+  } catch {
+    return null;
+  }
 }
