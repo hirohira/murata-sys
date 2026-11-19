@@ -23,6 +23,7 @@ import type {
   Report,
 } from '@/types';
 import { hasChapterContent } from '@/lib/chapter-numbering';
+import { resizeForUpload } from '@/lib/compress-photo';
 import {
   getChapterTemplate,
   DEFAULT_WORK_HOURS,
@@ -417,37 +418,49 @@ export default function ReportWizard({ initialReport }: { initialReport?: Report
   };
 
   // Upload photos to Supabase Storage
+  // スマホ写真はそのままだとVercelの送信上限（4.5MB）を超えて失敗するため、縮小してから送る。
+  // 1枚でも失敗したら例外にし、URLが空のまま保存されて画像が歯抜けになるのを防ぐ。
   const uploadChapterPhotos = async (): Promise<ReportChapter[]> => {
-    const uploadedChapters = [...chapters];
+    const failed: string[] = [];
 
-    for (const chapter of uploadedChapters) {
-      for (let i = 0; i < chapter.photos.length; i++) {
-        const photo = chapter.photos[i];
-        if (photo.file && !photo.url) {
-          try {
-            const formData = new FormData();
-            formData.append('file', photo.file);
-            formData.append('project_id', projectId);
-            formData.append('category', chapter.key);
-            const res = await fetch('/api/upload', {
-              method: 'POST',
-              body: formData,
-            });
-            if (res.ok) {
-              const { url, path } = await res.json();
-              chapter.photos[i] = {
-                ...photo,
-                url,
-                path,
-                file: undefined,
-                preview: undefined,
-              };
-            }
-          } catch (err) {
-            console.error('Photo upload failed:', err);
-          }
+    const uploadedChapters: ReportChapter[] = [];
+    for (const chapter of chapters) {
+      const photos: ChapterPhoto[] = [];
+      for (const photo of chapter.photos) {
+        if (!photo.file || photo.url) {
+          photos.push(photo);
+          continue;
+        }
+        try {
+          const { blob } = await resizeForUpload(photo.file);
+          const baseName = photo.file.name.replace(/\.[^.]+$/, '') || 'photo';
+          const formData = new FormData();
+          formData.append('file', new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' }));
+          formData.append('projectId', projectId);
+          formData.append('category', chapter.key);
+          const res = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const { url, path } = await res.json();
+          if (!url) throw new Error('URLが返されませんでした');
+          photos.push({ ...photo, url, path, file: undefined, preview: undefined });
+        } catch (err) {
+          console.error('Photo upload failed:', err);
+          failed.push(`${chapter.title}：${photo.file.name}`);
+          photos.push(photo); // 未アップのまま残し、再試行できるようにする
         }
       }
+      uploadedChapters.push({ ...chapter, photos });
+    }
+
+    if (failed.length > 0) {
+      setChapters(uploadedChapters); // 成功分は反映し、再実行時に二重アップしない
+      throw new Error(
+        `写真${failed.length}枚のアップロードに失敗しました。通信状態を確認して、もう一度お試しください。\n` +
+          failed.join('\n')
+      );
     }
 
     return uploadedChapters;
@@ -529,7 +542,15 @@ export default function ReportWizard({ initialReport }: { initialReport?: Report
   const handleSaveWithoutAI = async () => {
     if (!canAdvance()) return;
     setSaving(true);
-    const uploaded = await uploadChapterPhotos();
+    setError('');
+    let uploaded: ReportChapter[];
+    try {
+      uploaded = await uploadChapterPhotos();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '写真のアップロードに失敗しました');
+      setSaving(false);
+      return;
+    }
     setChapters(uploaded);
     await handleSave(uploaded);
   };
@@ -650,7 +671,7 @@ export default function ReportWizard({ initialReport }: { initialReport?: Report
 
       {/* Error display */}
       {error && (
-        <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-lg mb-4">
+        <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-lg mb-4 whitespace-pre-line">
           {error}
         </div>
       )}
