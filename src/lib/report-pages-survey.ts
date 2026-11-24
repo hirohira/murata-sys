@@ -17,6 +17,7 @@ import type { ChapterPhoto, Project, Report, ReportChapter } from '@/types';
 import { stripChapterNumber, hasChapterContent } from '@/lib/chapter-numbering';
 import {
   companyPage,
+  fitParagraphs,
   formatJpDate,
   photoBadge,
   schedulePage,
@@ -287,6 +288,60 @@ function photoWithLine(photo: ChapterPhoto | undefined, line: string): Element[]
   ];
 }
 
+// ─── 半ページ（写真3枚＋短いコメントの章は、2章を1ページに） ─────────────
+
+const HALF_PHOTO_W = 2.8;
+const HALF_PHOTO_H = 2.1;
+const HALF_OFFSET = 3.3; // 下半分のずれ
+const HALF_CAPTION: Box = { x: 0.6, y: 2.97, w: W - 1.2, h: 0.48 };
+const HALF_CAPTION_SIZES = [12, 11];
+
+function chapterTexts(groups: Group[], tail: string): string[] {
+  return [...groups.map((g) => g.caption).filter(Boolean), ...(tail ? [tail] : [])];
+}
+
+/** 写真がちょうど3枚で、コメントが2行に収まる章は半ページにできる */
+function fitsHalf(groups: Group[], tail: string): boolean {
+  const n = groups.reduce((k, g) => k + g.photos.length, 0);
+  if (n !== 3) return false;
+  const lines = chapterTexts(groups, tail)
+    .flatMap((t) => t.split('\n'))
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((t) => ({ text: t }));
+  if (lines.length === 0) return true;
+  return !fitParagraphs(lines, HALF_CAPTION, HALF_CAPTION_SIZES, 1.35).truncated;
+}
+
+function halfElements(title: string, groups: Group[], tail: string, off: number): Element[] {
+  const items: Item[] = groups.flatMap((g, gi) => g.photos.map((photo) => ({ photo, group: gi })));
+  const els: Element[] = [
+    text({ x: L, y: 0.2 + off, w: CW, h: 0.44 }, title, { sizes: [16, 15, 14, 13, 12], bold: true, align: 'center', valign: 'bottom' }),
+    { kind: 'line', box: { x: L, y: 0.7 + off, w: CW, h: 0 }, color: RED, widthPt: 2.25 },
+  ];
+  const boxes = rowBoxes(items.length, 0.82 + off, HALF_PHOTO_W, HALF_PHOTO_H, 0.4);
+  items.forEach((it, i) => els.push(photoEl(it.photo, boxes[i])));
+  for (let i = 0; i + 1 < boxes.length; i++) {
+    if (items[i].group === items[i + 1].group) els.push(hArrow(boxes[i], boxes[i + 1]));
+  }
+  const paragraphs: Paragraph[] = chapterTexts(groups, tail)
+    .flatMap((t) => t.split('\n'))
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((t) => ({ text: t }));
+  if (paragraphs.length) {
+    els.push(
+      text({ ...HALF_CAPTION, y: HALF_CAPTION.y + off }, paragraphs, {
+        sizes: HALF_CAPTION_SIZES,
+        lineSpacing: 1.35,
+        align: 'center',
+        valign: 'top',
+      })
+    );
+  }
+  return els;
+}
+
 // ─── 全ページの組み立て ─────────────────────────────
 
 const SKIP = new Set(['cover', 'schedule', 'company', 'overview', 'closing']);
@@ -325,16 +380,37 @@ export function buildSurveyPages(
     }
   }
 
+  // 半ページにできる章が続いたら、2章を1ページにまとめる
+  let pendingHalf: { title: string; groups: Group[]; tail: string } | null = null;
+  const flushHalf = () => {
+    if (!pendingHalf) return;
+    // 相手がいなければ通常の1ページ
+    bodies.push({ title: pendingHalf.title, els: layoutPhotos(pendingHalf.groups, pendingHalf.tail) });
+    pendingHalf = null;
+  };
   for (const ch of chapters) {
     if (SKIP.has(ch.key)) continue;
     if (!hasChapterContent(ch)) continue;
     const title = stripChapterNumber(ch.title || '');
-    const pages = paginate(chapterGroups(ch));
-    pages.forEach((groups, i) => {
+    const tail = (ch.description || '').trim();
+    const groups = chapterGroups(ch);
+    if (fitsHalf(groups, tail)) {
+      if (pendingHalf) {
+        bodies.push({ els: [...halfElements(pendingHalf.title, pendingHalf.groups, pendingHalf.tail, 0), ...halfElements(title, groups, tail, HALF_OFFSET)] });
+        pendingHalf = null;
+      } else {
+        pendingHalf = { title, groups, tail };
+      }
+      continue;
+    }
+    flushHalf();
+    const pages = paginate(groups);
+    pages.forEach((g, i) => {
       const last = i === pages.length - 1;
-      bodies.push({ title, els: layoutPhotos(groups, last ? (ch.description || '').trim() : '') });
+      bodies.push({ title, els: layoutPhotos(g, last ? tail : '') });
     });
   }
+  flushHalf();
 
   if (overviewPhoto || closing) {
     bodies.push({
