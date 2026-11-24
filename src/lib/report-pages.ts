@@ -59,6 +59,7 @@ export type Element =
   | { kind: 'asset'; asset: AssetKey; box: Box }
   | { kind: 'photo'; photo: ChapterPhoto; box: Box; badge?: { text: string; color: string } }
   | { kind: 'line'; box: Box; color: string; widthPt: number } // 水平線（box.h は 0）
+  | { kind: 'arrow'; from: { x: number; y: number }; to: { x: number; y: number }; color: string; widthPt: number }
   | {
       kind: 'text';
       box: Box;
@@ -76,6 +77,14 @@ export type Element =
 export interface Page {
   elements: Element[];
 }
+
+/** ページの大きさ（インチ） */
+export interface SlideSize {
+  w: number;
+  h: number;
+}
+
+export const SIZE_4x3: SlideSize = { w: SLIDE_W, h: SLIDE_H };
 
 const RED = 'FF0000';
 const TEXT = '222222';
@@ -153,7 +162,7 @@ export function fitParagraphs(
   return { paragraphs: out, fontSize: size, truncated: true };
 }
 
-function text(
+export function text(
   box: Box,
   paragraphs: Paragraph[] | string,
   opts: {
@@ -207,7 +216,7 @@ function chrome(pageNumber: number): Element[] {
 
 // ─── 日付などの整形 ─────────────────────────────
 
-function formatJpDate(value?: string | null): string {
+export function formatJpDate(value?: string | null): string {
   if (!value) return '';
   const d = new Date(value.length <= 10 ? `${value}T00:00:00+09:00` : value);
   if (Number.isNaN(d.getTime())) return value;
@@ -215,7 +224,7 @@ function formatJpDate(value?: string | null): string {
   return `${jst.getUTCFullYear()}年${jst.getUTCMonth() + 1}月${jst.getUTCDate()}日`;
 }
 
-function withHonorific(name: string): string {
+export function withHonorific(name: string): string {
   const n = name.trim();
   if (!n) return '';
   return /(様|御中|殿)$/.test(n) ? n : `${n}　御中`;
@@ -284,7 +293,7 @@ const PHOTO_H = 2.36;
 const PHOTO_GAP = 0.13;
 const HALF_OFFSET = 3.35;
 
-function photoBadge(p: ChapterPhoto) {
+export function photoBadge(p: ChapterPhoto) {
   if (p.tag === 'before') return { text: '施工前', color: 'E65100' };
   if (p.tag === 'after') return { text: '施工後', color: '2E7D32' };
   return undefined;
@@ -375,7 +384,7 @@ function chapterBlocks(chapter: ReportChapter): Block[] {
   });
 }
 
-function schedulePage(report: Report, chapter: ReportChapter | undefined, worker: string | null): Element[] {
+export function schedulePage(report: Report, chapter: ReportChapter | undefined, worker: string | null): Element[] {
   const meta = report.meta ?? {};
   const label = (t: string): Paragraph => ({ text: `【${t}】`, bold: true });
   const blank: Paragraph = { text: '' };
@@ -421,7 +430,7 @@ function schedulePage(report: Report, chapter: ReportChapter | undefined, worker
   ];
 }
 
-function companyPage(): Element[] {
+export function companyPage(): Element[] {
   const c = MURATA_COMPANY;
   const els: Element[] = [
     text({ x: 0.43, y: 0.35, w: 9.2, h: 0.5 }, c.slogan, { sizes: [20, 18, 16], bold: true, underline: true, valign: 'middle' }),

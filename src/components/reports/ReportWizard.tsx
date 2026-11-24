@@ -102,8 +102,8 @@ export default function ReportWizard({ initialReport }: { initialReport?: Report
   // Step 2: 基本情報
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState(initialReport?.project_id || preselectedProjectId || '');
-  // 報告書様式は茂様式に統一
-  const reportStyle: ReportStyle = '茂様式';
+  // 報告書様式：新規は茂様式。チャットで作った報告書（調査報告書様式）は編集しても様式を保つ
+  const reportStyle: ReportStyle = initMeta.report_style === '調査報告書様式' ? '調査報告書様式' : '茂様式';
   const [audienceType, setAudienceType] = useState<AudienceType>(
     initialReport?.project?.audience_type ?? '一般施主向け'
   );
@@ -576,6 +576,7 @@ export default function ReportWizard({ initialReport }: { initialReport?: Report
           caption: p.caption,
           sort_order: p.sort_order,
           ...(p.tag ? { tag: p.tag } : {}),
+          ...(typeof p.group === 'number' ? { group: p.group } : {}),
         })),
       }));
 

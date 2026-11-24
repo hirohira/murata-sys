@@ -2,14 +2,8 @@
 
 import React, { useMemo, useState } from 'react';
 import type { Report } from '@/types';
-import {
-  buildReportPages,
-  ASSET_PATH,
-  SLIDE_W,
-  SLIDE_H,
-  type Box,
-  type Element,
-} from '@/lib/report-pages';
+import { ASSET_PATH, type Box, type Element, type SlideSize } from '@/lib/report-pages';
+import { buildPages, isSurveyStyle } from '@/lib/report-layout';
 
 interface Props {
   report: Report;
@@ -18,7 +12,7 @@ interface Props {
 
 /** 報告書のスライドプレビュー（PowerPoint出力と同じページ構成・配置） */
 export default function ReportSlidePreview({ report, worker }: Props) {
-  const pages = useMemo(() => buildReportPages(report, { worker }), [report, worker]);
+  const { size, pages } = useMemo(() => buildPages(report, { worker }), [report, worker]);
   const [current, setCurrent] = useState(0);
   const total = pages.length;
   const index = Math.min(current, total - 1);
@@ -32,7 +26,7 @@ export default function ReportSlidePreview({ report, worker }: Props) {
           <svg className="w-4 h-4 text-murata-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
-          スライドプレビュー（茂様式）
+          スライドプレビュー（{isSurveyStyle(report) ? '調査報告書様式' : '茂様式'}）
         </h3>
         <span className="text-xs text-gray-400">
           {index + 1} / {total}
@@ -44,13 +38,13 @@ export default function ReportSlidePreview({ report, worker }: Props) {
           <div
             className="relative bg-white shadow-lg overflow-hidden"
             style={{
-              aspectRatio: '4/3',
+              aspectRatio: `${size.w}/${size.h}`,
               fontFamily: "'Meiryo', 'Noto Sans JP', sans-serif",
               containerType: 'inline-size',
             }}
           >
             {pages[index].elements.map((el, i) => (
-              <SlideElement key={i} el={el} />
+              <SlideElement key={i} el={el} size={size} />
             ))}
           </div>
         </div>
@@ -98,25 +92,53 @@ export default function ReportSlidePreview({ report, worker }: Props) {
 }
 
 /** インチ単位の枠をスライド内の位置（%）に変換 */
-function boxStyle(box: Box): React.CSSProperties {
+function boxStyleFor(size: SlideSize, box: Box): React.CSSProperties {
   return {
     position: 'absolute',
-    left: `${(box.x / SLIDE_W) * 100}%`,
-    top: `${(box.y / SLIDE_H) * 100}%`,
-    width: `${(box.w / SLIDE_W) * 100}%`,
-    height: `${(box.h / SLIDE_H) * 100}%`,
+    left: `${(box.x / size.w) * 100}%`,
+    top: `${(box.y / size.h) * 100}%`,
+    width: `${(box.w / size.w) * 100}%`,
+    height: `${(box.h / size.h) * 100}%`,
   };
 }
 
-/** pt をスライド幅基準の長さに変換（スライド幅10インチ = 100cqw） */
-function pt(size: number): string {
-  return `${((size / 72) * 100) / SLIDE_W}cqw`;
+/** pt をスライド幅基準の長さに変換（スライド幅 = 100cqw） */
+function ptFor(size: SlideSize, pts: number): string {
+  return `${((pts / 72) * 100) / size.w}cqw`;
 }
 
 const JUSTIFY = { top: 'flex-start', middle: 'center', bottom: 'flex-end' } as const;
 
-function SlideElement({ el }: { el: Element }) {
+function SlideElement({ el, size }: { el: Element; size: SlideSize }) {
+  const boxStyle = (box: Box) => boxStyleFor(size, box);
+  const pt = (pts: number) => ptFor(size, pts);
   switch (el.kind) {
+    case 'arrow': {
+      const id = `arrow-${el.from.x}-${el.from.y}-${el.to.x}-${el.to.y}`.replace(/\./g, '_');
+      return (
+        <svg
+          viewBox={`0 0 ${size.w} ${size.h}`}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+          aria-hidden="true"
+        >
+          <defs>
+            <marker id={id} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto">
+              <path d="M0,0 L10,5 L0,10 z" fill={`#${el.color}`} />
+            </marker>
+          </defs>
+          <line
+            x1={el.from.x}
+            y1={el.from.y}
+            x2={el.to.x}
+            y2={el.to.y}
+            stroke={`#${el.color}`}
+            strokeWidth={el.widthPt / 72}
+            markerEnd={`url(#${id})`}
+          />
+        </svg>
+      );
+    }
+
     case 'asset':
       return (
         // eslint-disable-next-line @next/next/no-img-element

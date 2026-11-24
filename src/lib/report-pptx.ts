@@ -1,7 +1,8 @@
 // 報告書PowerPoint（茂様式）の生成
 // ページの中身は report-pages.ts で組み立て、ここでは図形として書き出すだけ（プレビューと同じ配置）
 import type { Report } from '@/types';
-import { buildReportPages, type Element } from '@/lib/report-pages';
+import type { Element } from '@/lib/report-pages';
+import { buildPages } from '@/lib/report-layout';
 import { REPORT_ASSET_DATA } from '@/lib/report-assets';
 
 const FONT_BODY = 'メイリオ';
@@ -10,12 +11,16 @@ const FONT_ROUNDED = 'HG丸ｺﾞｼｯｸM-PRO';
 export async function buildReportPptx(report: Report, opts: { worker?: string | null } = {}): Promise<Buffer> {
   const PptxGenJS = (await import('pptxgenjs')).default;
   const pptx = new PptxGenJS();
-  pptx.layout = 'LAYOUT_4x3';
+  const { size, pages } = buildPages(report, { worker: opts.worker });
+  if (size.w === 10 && size.h === 7.5) {
+    pptx.layout = 'LAYOUT_4x3';
+  } else {
+    pptx.defineLayout({ name: 'REPORT', width: size.w, height: size.h });
+    pptx.layout = 'REPORT';
+  }
   pptx.author = '株式会社MURATA';
   pptx.company = '株式会社MURATA';
   pptx.title = report.title;
-
-  const pages = buildReportPages(report, { worker: opts.worker });
 
   // 写真は同じURLを何度も取得しないようにキャッシュ
   const cache = new Map<string, Promise<LoadedImage | null>>();
@@ -66,6 +71,22 @@ async function drawElement(
         line: { color: el.color, width: el.widthPt },
       });
       return;
+
+    case 'arrow': {
+      // 線は左上の点と幅・高さで指定し、向きは反転フラグで表す
+      const x = Math.min(el.from.x, el.to.x);
+      const y = Math.min(el.from.y, el.to.y);
+      slide.addShape(pptx.ShapeType.line, {
+        x,
+        y,
+        w: Math.abs(el.to.x - el.from.x),
+        h: Math.abs(el.to.y - el.from.y),
+        flipH: el.to.x < el.from.x,
+        flipV: el.to.y < el.from.y,
+        line: { color: el.color, width: el.widthPt, endArrowType: 'triangle' },
+      });
+      return;
+    }
 
     case 'photo': {
       const url = el.photo.url;

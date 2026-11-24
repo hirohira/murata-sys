@@ -5,11 +5,13 @@ import { useState, useRef, useCallback } from "react";
 interface Props {
   value: string;
   onChange: (text: string) => void;
+  /** マイクのボタンだけを出す（チャットの入力欄の横など） */
+  compact?: boolean;
 }
 
 const MAX_RECORDING_SECONDS = 20;
 
-export default function VoiceRecorder({ value, onChange }: Props) {
+export default function VoiceRecorder({ value, onChange, compact = false }: Props) {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -125,6 +127,39 @@ export default function VoiceRecorder({ value, onChange }: Props) {
   };
 
   const remaining = MAX_RECORDING_SECONDS - recordingTime;
+
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={isRecording ? stopRecording : startRecording}
+        disabled={isTranscribing}
+        aria-label={isRecording ? `録音を止める（残り${remaining}秒）` : isTranscribing ? '文字起こし中' : '音声で入力'}
+        title={isRecording ? '録音を止める' : '音声で入力'}
+        className={`relative flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center transition-colors ${
+          isRecording
+            ? 'bg-red-600 text-white animate-pulse'
+            : isTranscribing
+              ? 'bg-gray-200 text-gray-400'
+              : 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100'
+        }`}
+      >
+        {isTranscribing ? (
+          <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+        ) : isRecording ? (
+          <span className="text-[11px] font-bold tabular-nums">{remaining}</span>
+        ) : (
+          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+          </svg>
+        )}
+      </button>
+    );
+  }
 
   return (
     <div className="space-y-2">

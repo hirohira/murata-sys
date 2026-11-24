@@ -44,8 +44,11 @@ export default function ReportsPage() {
           <h2 className="text-lg font-bold text-gray-900">報告書一覧</h2>
           <p className="text-sm text-gray-500">{reports.length} 件の報告書</p>
         </div>
-        <div className="flex gap-2">
-          <Link href="/reports/quick" className="btn btn-primary btn-sm">
+        <div className="flex flex-wrap justify-end gap-2">
+          <Link href="/reports/chat" className="btn btn-primary btn-sm">
+            チャットで作成
+          </Link>
+          <Link href="/reports/quick" className="btn btn-secondary btn-sm">
             かんたん作成
           </Link>
           <Link href="/reports/new" className="btn btn-secondary btn-sm">

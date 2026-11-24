@@ -99,6 +99,9 @@ export default function ProjectDetailPage() {
               )
             }
           />
+          <Link href={`/reports/chat?projectId=${project.id}`} className="btn btn-secondary btn-sm">
+            チャットで報告書
+          </Link>
           <Link href={`/reports/quick?projectId=${project.id}`} className="btn btn-secondary btn-sm">
             報告書をかんたん作成
           </Link>

@@ -29,7 +29,7 @@ export type ReportStatus = '下書き' | '確認中' | '承認済み';
 
 export type FindingSeverity = '要補修' | '経過観察' | '問題なし';
 
-export type ReportStyle = '茂様式' | '大野様式';
+export type ReportStyle = '茂様式' | '大野様式' | '調査報告書様式';
 
 export type InputPattern = 'onsite' | 'office';
 
@@ -126,6 +126,7 @@ export interface ChapterPhoto {
   caption: string;
   sort_order: number;
   tag?: PhotoTag;      // 完了報告書: 施工前/施工後タグ
+  group?: number;      // 調査報告書様式: 同じ番号の写真は一続き（遠景→アップ）。行ごとのコメントにも使う
 }
 
 export interface ReportChapter {
