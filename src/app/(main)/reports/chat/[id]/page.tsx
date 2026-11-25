@@ -311,8 +311,8 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
     mutate((prev) => [...ensureSection(prev), { ...stamp(), kind: 'text', text }]);
   };
 
+  // 確認は画面内のボタンで行う（iPhoneのホーム画面アプリなどでは confirm() の確認窓が出ないことがある）
   const removeMessage = (id: string) => {
-    if (!window.confirm('この投稿を削除しますか？（写真は案件の「写真」には残ります）')) return;
     mutate((prev) => prev.filter((m) => m.id !== id));
   };
 
@@ -433,9 +433,7 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
                 <div className="flex items-center gap-2">
                   <span className={`rounded-full px-3 py-1 text-xs font-bold text-white ${def.color}`}>{sectionLabel(m, messages)}</span>
                   <span className="h-px flex-1 bg-gray-300" />
-                  <button type="button" onClick={() => removeMessage(m.id)} className="text-xs text-gray-400 hover:text-red-600">
-                    削除
-                  </button>
+                  <DeleteButton onConfirm={() => removeMessage(m.id)} />
                 </div>
                 <Bubble side={m.by && m.by !== myName ? 'left' : 'right'} name={m.by} time={m.at}>
                   <p>{def.prompt}</p>
@@ -711,6 +709,48 @@ function SaveBadge({ state, onRetry }: { state: SaveState; onRetry: () => void }
   );
 }
 
+/** 削除ボタン：1回目のタップで「削除する／やめる」を出し、2回目で削除（指で押しやすい大きさにする） */
+function DeleteButton({ onConfirm }: { onConfirm: () => void }) {
+  const [asking, setAsking] = useState(false);
+  useEffect(() => {
+    if (!asking) return;
+    const t = setTimeout(() => setAsking(false), 5000);
+    return () => clearTimeout(t);
+  }, [asking]);
+  if (asking) {
+    return (
+      <span className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => {
+            setAsking(false);
+            onConfirm();
+          }}
+          className="min-h-[32px] touch-manipulation rounded-md bg-red-600 px-2.5 text-xs font-bold text-white"
+        >
+          削除する
+        </button>
+        <button
+          type="button"
+          onClick={() => setAsking(false)}
+          className="min-h-[32px] touch-manipulation rounded-md bg-gray-200 px-2.5 text-xs text-gray-700"
+        >
+          やめる
+        </button>
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setAsking(true)}
+      className="-m-1 min-h-[32px] touch-manipulation px-2 text-xs text-gray-500 underline-offset-2 hover:text-red-600 active:text-red-600"
+    >
+      削除
+    </button>
+  );
+}
+
 function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
@@ -756,11 +796,7 @@ function Bubble({
             {children}
           </div>
           <div className={`flex flex-shrink-0 flex-col gap-0.5 text-[10px] text-gray-500 ${right ? 'items-end' : 'items-start'}`}>
-            {onDelete && (
-              <button type="button" onClick={onDelete} className="text-gray-400 hover:text-red-600">
-                削除
-              </button>
-            )}
+            {onDelete && <DeleteButton onConfirm={onDelete} />}
             {time && <span>{hhmm(time)}</span>}
           </div>
         </div>
