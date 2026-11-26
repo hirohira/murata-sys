@@ -1,7 +1,11 @@
 /** この端末で録音できる音声の形式（iPhone の Safari は mp4、Android・PC の Chrome は webm） */
 export function pickAudioMimeType(): string | undefined {
   if (typeof MediaRecorder === 'undefined') return undefined;
-  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/aac'];
+  // iPhone・Mac の Safari は mp4 を優先（Safari の webm 録音は OpenAI で読めないことがある）
+  const isSafari = typeof navigator !== 'undefined' && /Safari/.test(navigator.userAgent) && !/Chrome|CriOS|Android/.test(navigator.userAgent);
+  const webm = ['audio/webm;codecs=opus', 'audio/webm'];
+  const mp4 = ['audio/mp4', 'audio/mp4;codecs=mp4a.40.2', 'audio/aac'];
+  const candidates = isSafari ? [...mp4, ...webm] : [...webm, ...mp4];
   return candidates.find((t) => MediaRecorder.isTypeSupported?.(t));
 }
 
