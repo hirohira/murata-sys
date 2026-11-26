@@ -78,6 +78,9 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
   const [voiceCamOpen, setVoiceCamOpen] = useState(false);
   // 解説を文字にしている写真（`${投稿id}:${番号}`）
   const [transcribing, setTranscribing] = useState<Record<string, boolean>>({});
+  // 文字にできなかった写真（`${投稿id}:${番号}` → 理由）と、やり直し用の音声
+  const [noteErrors, setNoteErrors] = useState<Record<string, string>>({});
+  const voiceBlobsRef = useRef<Record<string, Blob[]>>({});
   const [noteEdit, setNoteEdit] = useState<{ msgId: string; idx: number; text: string } | null>(null);
   const pendingRef = useRef<Record<string, PendingUpload>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -298,25 +301,50 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
     if (!msgId) return;
     const jobs = shots.map((s, i) => ({ i, blobs: [s.audio, i === shots.length - 1 ? trailing : null].filter((b): b is Blob => !!b) }));
     const todo = jobs.filter((j) => j.blobs.length > 0);
-    setTranscribing((prev) => ({ ...prev, ...Object.fromEntries(todo.map((j) => [`${msgId}:${j.i}`, true])) }));
-    let next = 0;
-    const worker = async () => {
-      while (next < todo.length) {
-        const job = todo[next++];
-        try {
-          const texts = await Promise.all(job.blobs.map((b) => transcribeBlob(b).catch(() => '')));
-          const text = texts.map(cleanTranscript).filter(Boolean).join(' ');
-          if (text) setPhotoNote(msgId, job.i, text);
-        } finally {
-          setTranscribing((prev) => {
-            const n = { ...prev };
-            delete n[`${msgId}:${job.i}`];
-            return n;
-          });
-        }
+    // 音声がまったく録れていないときは、理由が分かるように知らせる
+    if (todo.length === 0) {
+      setNotice('音声が録れていませんでした。マイクの許可を確認し、写真の説明を話してからシャッターを押してください。解説は写真の下の「＋解説」から手で入れることもできます。');
+      return;
+    }
+    todo.forEach((j) => (voiceBlobsRef.current[`${msgId}:${j.i}`] = j.blobs));
+    todo.forEach((j) => void transcribePhoto(msgId, j.i));
+  };
+
+  /** 1枚分の音声を文字にして解説に入れる（失敗したら理由を出し、押すとやり直せる） */
+  const transcribePhoto = async (msgId: string, idx: number) => {
+    const key = `${msgId}:${idx}`;
+    const blobs = voiceBlobsRef.current[key];
+    if (!blobs?.length) return;
+    setTranscribing((prev) => ({ ...prev, [key]: true }));
+    setNoteErrors((prev) => {
+      const n = { ...prev };
+      delete n[key];
+      return n;
+    });
+    try {
+      const results = await Promise.allSettled(blobs.map((b) => transcribeBlob(b)));
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+      const text = results
+        .map((r) => (r.status === 'fulfilled' ? cleanTranscript(r.value) : ''))
+        .filter(Boolean)
+        .join(' ');
+      if (text) {
+        setPhotoNote(msgId, idx, text);
+        delete voiceBlobsRef.current[key];
+      } else if (failed) {
+        throw failed.reason;
+      } else {
+        setNoteErrors((prev) => ({ ...prev, [key]: '聞き取れる声がありませんでした' }));
       }
-    };
-    void Promise.all([worker(), worker(), worker()]);
+    } catch (e) {
+      setNoteErrors((prev) => ({ ...prev, [key]: e instanceof Error ? e.message : '文字にできませんでした' }));
+    } finally {
+      setTranscribing((prev) => {
+        const n = { ...prev };
+        delete n[key];
+        return n;
+      });
+    }
   };
 
   /** 写真をアップして投稿する。投稿の id を返す */
@@ -584,6 +612,14 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
                     {/* 写真ごとの解説（話しながら撮った内容。タップで直す） */}
                     {transcribing[`${m.id}:${t.i}`] ? (
                       <p className="mt-1 text-[11px] text-gray-500">解説を文字にしています…</p>
+                    ) : noteErrors[`${m.id}:${t.i}`] && !t.note ? (
+                      <button
+                        type="button"
+                        onClick={() => void transcribePhoto(m.id, t.i)}
+                        className="mt-1 block w-full text-left text-[11px] leading-snug text-red-600"
+                      >
+                        解説を文字にできませんでした（{noteErrors[`${m.id}:${t.i}`]}）<span className="underline">もう一度</span>
+                      </button>
                     ) : t.status === 'done' && t.path ? (
                       <button
                         type="button"

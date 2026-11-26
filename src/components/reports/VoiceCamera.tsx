@@ -63,7 +63,8 @@ export default function VoiceCamera({ sectionLabel, onFinish, onClose }: Props) 
       rec.ondataavailable = (e) => {
         if (e.data.size > 0) seg.chunks.push(e.data);
       };
-      rec.start(500);
+      // 区切りなしで録音し、止めたときに1つの音声ファイルとして受け取る（iPhone の Safari で確実なやり方）
+      rec.start();
       segRef.current = seg;
       segStartRef.current = seg.start;
       setSeconds(0);
@@ -93,8 +94,8 @@ export default function VoiceCamera({ sectionLabel, onFinish, onClose }: Props) 
       } catch {
         resolve(null);
       }
-      // 端末によって onstop が来ないことがあるので待ちすぎない
-      setTimeout(done, 1500);
+      // 端末によって onstop が来ないことがあるので、待つのは5秒まで
+      setTimeout(done, 5000);
     });
   }, []);
 
@@ -183,12 +184,13 @@ export default function VoiceCamera({ sectionLabel, onFinish, onClose }: Props) 
     setTimeout(() => setFlash(false), 120);
     try {
       const blob = await grabFrame();
-      // シャッターまでに話した内容がこの写真の解説（すぐ次の区切りを始める）
+      // シャッターまでに話した内容がこの写真の解説。
+      // 前の録音を止め終えてから次を始める（iPhone では録音を2つ同時に動かすと失敗することがあるため）
       const audio = await stopSegment();
       startSegment();
       if (!blob) throw new Error('画像を取り込めませんでした');
       const file = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
-      const shot = { file, preview: URL.createObjectURL(blob), audio };
+      const shot: VoiceShot = { file, preview: URL.createObjectURL(blob), audio };
       shotsRef.current = [...shotsRef.current, shot];
       setShots(shotsRef.current);
       setError('');
