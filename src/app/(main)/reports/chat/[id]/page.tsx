@@ -4,9 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import ProjectPhotoPicker from '@/components/reports/ProjectPhotoPicker';
+import VoiceCamera, { type VoiceShot } from '@/components/reports/VoiceCamera';
+import { transcribeBlob } from '@/lib/audio-recording';
 import { resizeForUpload } from '@/lib/compress-photo';
 import {
   CHAT_SECTIONS,
+  cleanTranscript,
   SECTION_BY_KEY,
   currentSection,
   isCreateRequest,
@@ -30,7 +33,7 @@ interface PendingUpload {
   status: ('uploading' | 'done' | 'error')[];
   errors: (string | undefined)[];
   category: string;
-  method: 'camera' | 'select';
+  method: 'camera' | 'select' | 'inapp';
 }
 
 interface Result {
@@ -71,7 +74,11 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
   messagesRef.current = messages;
   const updatedAtRef = useRef<string | null>(null);
   // アップ中の写真（ファイルと、アップが済んだ写真）。状態の更新を待たずに読めるよう ref で持つ
-  const uploadsRef = useRef<Record<string, { files: File[]; slots: (ChatPhoto | null)[] }>>({});
+  const uploadsRef = useRef<Record<string, { files: File[]; slots: (ChatPhoto | null)[]; notes: (string | undefined)[] }>>({});
+  const [voiceCamOpen, setVoiceCamOpen] = useState(false);
+  // 解説を文字にしている写真（`${投稿id}:${番号}`）
+  const [transcribing, setTranscribing] = useState<Record<string, boolean>>({});
+  const [noteEdit, setNoteEdit] = useState<{ msgId: string; idx: number; text: string } | null>(null);
   const pendingRef = useRef<Record<string, PendingUpload>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -207,7 +214,8 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `アップできませんでした（${res.status}）`);
       const saved = json.data as ReportPhoto;
-      const photo: ChatPhoto = { id: saved.id, url: saved.file_url, path: saved.file_path };
+      const note = up.notes[i];
+      const photo: ChatPhoto = { id: saved.id, url: saved.file_url, path: saved.file_path, ...(note ? { note } : {}) };
       up.slots[i] = photo;
       setPending((prev) => {
         const cur = prev[msgId];
@@ -251,15 +259,76 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
     }
   }, [pending]);
 
-  const addFiles = async (list: FileList | null, method: 'camera' | 'select') => {
+  /** 写真の解説を入れる（アップ前ならアップ時に付け、アップ後なら投稿の写真に付ける） */
+  const setPhotoNote = (msgId: string, idx: number, text: string) => {
+    const up = uploadsRef.current[msgId];
+    if (up) {
+      up.notes[idx] = text || undefined;
+      const slot = up.slots[idx];
+      if (!slot) return; // まだアップ中：アップが終わったときに付く
+      up.slots[idx] = { ...slot, note: text || undefined };
+      mutate((prev) =>
+        prev.map((m) =>
+          m.id === msgId && m.kind === 'photos'
+            ? { ...m, photos: m.photos.map((ph) => (ph.path === slot.path ? { ...ph, note: text || undefined } : ph)) }
+            : m
+        )
+      );
+      return;
+    }
+    mutate((prev) =>
+      prev.map((m) =>
+        m.id === msgId && m.kind === 'photos'
+          ? { ...m, photos: m.photos.map((ph, k) => (k === idx ? { ...ph, note: text || undefined } : ph)) }
+          : m
+      )
+    );
+  };
+
+  /** 話しながら撮った写真：写真をアップしつつ、各写真の音声を文字にして解説にする */
+  const addVoiceShots = (shots: VoiceShot[], trailing: Blob | null) => {
+    setVoiceCamOpen(false);
+    if (shots.length === 0) return;
+    shots.forEach((s) => URL.revokeObjectURL(s.preview));
+    const msgId = addFiles(
+      shots.map((s) => s.file),
+      'inapp',
+      true
+    );
+    if (!msgId) return;
+    const jobs = shots.map((s, i) => ({ i, blobs: [s.audio, i === shots.length - 1 ? trailing : null].filter((b): b is Blob => !!b) }));
+    const todo = jobs.filter((j) => j.blobs.length > 0);
+    setTranscribing((prev) => ({ ...prev, ...Object.fromEntries(todo.map((j) => [`${msgId}:${j.i}`, true])) }));
+    let next = 0;
+    const worker = async () => {
+      while (next < todo.length) {
+        const job = todo[next++];
+        try {
+          const texts = await Promise.all(job.blobs.map((b) => transcribeBlob(b).catch(() => '')));
+          const text = texts.map(cleanTranscript).filter(Boolean).join(' ');
+          if (text) setPhotoNote(msgId, job.i, text);
+        } finally {
+          setTranscribing((prev) => {
+            const n = { ...prev };
+            delete n[`${msgId}:${job.i}`];
+            return n;
+          });
+        }
+      }
+    };
+    void Promise.all([worker(), worker(), worker()]);
+  };
+
+  /** 写真をアップして投稿する。投稿の id を返す */
+  const addFiles = (list: FileList | File[] | null, method: 'camera' | 'select' | 'inapp', keepOrder = false): string | null => {
     const files = Array.from(list || []).filter((f) => f.type.startsWith('image/') || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.name));
-    if (files.length === 0 || !chat) return;
+    if (files.length === 0 || !chat) return null;
     // 撮影日時の順に並べる（遠景→アップの順に撮っていれば、そのままの並びになる）
-    files.sort((a, b) => a.lastModified - b.lastModified);
+    if (!keepOrder) files.sort((a, b) => a.lastModified - b.lastModified);
     const base = ensureSection(messagesRef.current);
     const sec = currentSection(base)!;
     const msgId = newMessageId();
-    uploadsRef.current[msgId] = { files, slots: files.map(() => null) };
+    uploadsRef.current[msgId] = { files, slots: files.map(() => null), notes: files.map(() => undefined) };
     const entry: PendingUpload = {
       files,
       previews: files.map((f) => URL.createObjectURL(f)),
@@ -281,7 +350,8 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
         await uploadSlot(msgId, i);
       }
     };
-    await Promise.all([worker(), worker()]);
+    void Promise.all([worker(), worker()]);
+    return msgId;
   };
 
   const importProjectPhotos = (photos: ChapterPhoto[]) => {
@@ -336,8 +406,8 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
   const generate = async () => {
     setGenError('');
     setResult(null);
-    if (uploading) {
-      setGenError('写真のアップが終わってから、もう一度押してください。');
+    if (uploading || Object.keys(transcribing).length > 0) {
+      setGenError('写真のアップと解説の文字起こしが終わってから、もう一度押してください。');
       return;
     }
     if (parseChat(messagesRef.current).sections.length === 0) {
@@ -421,7 +491,7 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
         <Bubble side="left" name="報告書アシスタント">
           <p>下のボタン（現状・原因・散水試験・対策…）を押してから、写真とコメントを投稿してください。</p>
           <p className="mt-1 text-gray-600">
-            一度に添付した写真が1組になり、報告書では「遠景→アップ」の順に矢印でつなぎます。最後に「これで報告書を作成」を押すか、「これで報告書を作成お願いします」と送ってください。
+            一度に添付した写真が1組になり、報告書では「遠景→アップ」の順に矢印でつなぎます。「話しながら撮る」では、写真の説明を話してからシャッターを押すと、その写真の解説になります。最後に「これで報告書を作成」を押すか、「これで報告書を作成お願いします」と送ってください。
           </p>
         </Bubble>
 
@@ -471,15 +541,18 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
 
           if (m.kind === 'photos') {
             const p = pending[m.id];
+            const noteOf = (path?: string) => (path ? m.photos.find((ph) => ph.path === path)?.note : undefined);
             const tiles = p
-              ? p.previews.map((preview, i) => ({ key: `${i}`, src: p.slots[i]?.url || preview, path: p.slots[i]?.path, status: p.status[i], error: p.errors[i], i }))
-              : m.photos.map((ph, i) => ({ key: ph.path, src: ph.url, path: ph.path, status: 'done' as const, error: undefined, i }));
+              ? p.previews.map((preview, i) => ({ key: `${i}`, src: p.slots[i]?.url || preview, path: p.slots[i]?.path, status: p.status[i], error: p.errors[i], i, note: noteOf(p.slots[i]?.path) }))
+              : m.photos.map((ph, i) => ({ key: ph.path, src: ph.url, path: ph.path, status: 'done' as const, error: undefined, i, note: ph.note }));
             if (tiles.length === 0) return null;
+            const anyNote = tiles.some((t) => t.note || transcribing[`${m.id}:${t.i}`]);
             return (
               <Bubble key={m.id} side={m.by && m.by !== myName ? 'left' : 'right'} name={m.by} time={m.at} wide onDelete={() => removeMessage(m.id)}>
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className={`grid gap-1.5 ${anyNote ? 'grid-cols-2' : 'grid-cols-3'}`}>
                   {tiles.map((t) => (
-                    <div key={t.key} className="relative aspect-[4/3] overflow-hidden rounded-md bg-gray-200">
+                    <div key={t.key} className="min-w-0">
+                    <div className="relative aspect-[4/3] overflow-hidden rounded-md bg-gray-200">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={t.src} alt={`${t.i + 1}枚目`} className={`h-full w-full object-cover ${t.status === 'uploading' ? 'opacity-50' : ''}`} />
                       <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 text-[11px] font-bold text-white tabular-nums">{t.i + 1}</span>
@@ -508,8 +581,52 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
                         </button>
                       )}
                     </div>
+                    {/* 写真ごとの解説（話しながら撮った内容。タップで直す） */}
+                    {transcribing[`${m.id}:${t.i}`] ? (
+                      <p className="mt-1 text-[11px] text-gray-500">解説を文字にしています…</p>
+                    ) : t.status === 'done' && t.path ? (
+                      <button
+                        type="button"
+                        onClick={() => setNoteEdit({ msgId: m.id, idx: t.i, text: t.note || '' })}
+                        className={`mt-1 block w-full text-left text-[12px] leading-snug ${t.note ? 'text-gray-800' : 'text-murata-primary underline'}`}
+                      >
+                        {t.note || '＋解説'}
+                      </button>
+                    ) : null}
+                    </div>
                   ))}
                 </div>
+                {noteEdit?.msgId === m.id && (
+                  <div className="mt-2 space-y-1.5 rounded-lg bg-white/70 p-2">
+                    <label htmlFor="note-edit" className="text-[11px] font-medium text-gray-600">
+                      {noteEdit.idx + 1}枚目の解説
+                    </label>
+                    <textarea
+                      id="note-edit"
+                      autoFocus
+                      rows={2}
+                      value={noteEdit.text}
+                      onChange={(e) => setNoteEdit({ ...noteEdit, text: e.target.value })}
+                      className="form-input w-full text-sm"
+                      placeholder="例：サッシ廻りのシーリングが切れている"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setNoteEdit(null)}>
+                        やめる
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => {
+                          setPhotoNote(noteEdit.msgId, noteEdit.idx, noteEdit.text.trim().slice(0, 300));
+                          setNoteEdit(null);
+                        }}
+                      >
+                        保存
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {tiles.length > 1 && <p className="mt-1 text-[11px] text-gray-500">1 → {tiles.length} の順に並べます</p>}
               </Bubble>
             );
@@ -628,19 +745,8 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
             'はじめに区分のボタンを押してください'
           )}
         </p>
+        {/* コメント欄（2行。スマホでも幅いっぱいに使う） */}
         <div className="flex items-end gap-1.5">
-          <input ref={cameraRef} id="chat-camera" type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { void addFiles(e.target.files, 'camera'); e.target.value = ''; }} />
-          <input ref={libraryRef} id="chat-library" type="file" accept="image/*" multiple className="hidden" onChange={(e) => { void addFiles(e.target.files, 'select'); e.target.value = ''; }} />
-          <IconButton label="カメラで撮る" onClick={() => cameraRef.current?.click()}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-          </IconButton>
-          <IconButton label="写真を選ぶ（まとめて）" onClick={() => libraryRef.current?.click()}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </IconButton>
-          <IconButton label="案件の写真から選ぶ" onClick={() => setPickerOpen(true)}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-          </IconButton>
           <label htmlFor="chat-input" className="sr-only">
             コメント
           </label>
@@ -654,11 +760,10 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
                 void send();
               }
             }}
-            rows={1}
-            placeholder="コメント"
-            className="form-input min-h-[44px] min-w-0 flex-1 resize-none py-2.5 text-sm"
+            rows={2}
+            placeholder="コメント（例：天井から雨漏りがあります）"
+            className="form-input min-h-[64px] min-w-0 flex-1 resize-none py-2 text-[15px] leading-snug"
           />
-          <VoiceRecorder compact value={input} onChange={setInput} />
           <button
             type="button"
             onClick={() => void send()}
@@ -668,17 +773,58 @@ export default function ChatReportPage({ params }: { params: { id: string } }) {
             送信
           </button>
         </div>
+        <div className="mt-1.5 flex items-center gap-1">
+          <input ref={cameraRef} id="chat-camera" type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { addFiles(e.target.files, 'camera'); e.target.value = ''; }} />
+          <input ref={libraryRef} id="chat-library" type="file" accept="image/*" multiple className="hidden" onChange={(e) => { addFiles(e.target.files, 'select'); e.target.value = ''; }} />
+          <button
+            type="button"
+            onClick={() => setVoiceCamOpen(true)}
+            className="flex h-11 flex-shrink-0 touch-manipulation items-center gap-1 rounded-full border border-red-200 bg-red-50 px-3 text-[13px] font-bold text-red-700"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            話しながら撮る
+          </button>
+          <IconButton label="カメラで撮る" onClick={() => cameraRef.current?.click()}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+          </IconButton>
+          <IconButton label="写真を選ぶ（まとめて）" onClick={() => libraryRef.current?.click()}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </IconButton>
+          <IconButton label="案件の写真から選ぶ" onClick={() => setPickerOpen(true)}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+          </IconButton>
+          <span className="flex-1" />
+          <VoiceRecorder compact value={input} onChange={setInput} />
+        </div>
         <button
           type="button"
           onClick={() => void generate()}
           disabled={generating || parsed.sections.length === 0}
           className="btn btn-accent mt-2 w-full"
         >
-          {generating ? '作成しています…' : uploading ? '写真をアップしています…' : 'これで報告書を作成'}
+          {generating
+            ? '作成しています…'
+            : uploading
+              ? '写真をアップしています…'
+              : Object.keys(transcribing).length > 0
+                ? '解説を文字にしています…'
+                : 'これで報告書を作成'}
         </button>
         {failedUploads && <p className="mt-1 text-xs text-red-600">アップできなかった写真があります。赤い写真を押すと再送します。</p>}
         {notice && <p className="mt-1 text-xs text-gray-600">{notice}</p>}
       </div>
+
+      {voiceCamOpen && (
+        <VoiceCamera
+          sectionLabel={active ? sectionLabel(active, messages) : '現状'}
+          onFinish={addVoiceShots}
+          onClose={() => setVoiceCamOpen(false)}
+        />
+      )}
 
       {pickerOpen && (
         <ProjectPhotoPicker

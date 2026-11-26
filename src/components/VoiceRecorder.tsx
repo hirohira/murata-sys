@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import { audioFileName, pickAudioMimeType } from "@/lib/audio-recording";
 
 interface Props {
   value: string;
@@ -32,15 +33,10 @@ export default function VoiceRecorder({ value, onChange, compact = false }: Prop
         },
       });
 
-      let mimeType = "audio/webm";
-      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
-        mimeType = "audio/webm;codecs=opus";
-      }
-
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType,
-        audioBitsPerSecond: 16000,
-      });
+      // iPhone は webm で録音できないので、端末が対応している形式を選ぶ
+      const picked = pickAudioMimeType();
+      const mediaRecorder = new MediaRecorder(stream, picked ? { mimeType: picked, audioBitsPerSecond: 16000 } : undefined);
+      const mimeType = mediaRecorder.mimeType || picked || "audio/webm";
 
       chunksRef.current = [];
       mediaRecorderRef.current = mediaRecorder;
@@ -93,7 +89,7 @@ export default function VoiceRecorder({ value, onChange, compact = false }: Prop
       }
 
       const formData = new FormData();
-      formData.append("audio", blob, "recording.webm");
+      formData.append("audio", blob, audioFileName(blob.type));
 
       const res = await fetch("/api/transcribe", {
         method: "POST",

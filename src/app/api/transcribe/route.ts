@@ -31,8 +31,11 @@ export async function POST(req: NextRequest) {
     // (avoids node-fetch ECONNRESET issues in Vercel serverless)
     const openaiForm = new FormData();
     const arrayBuffer = await audioFile.arrayBuffer();
-    const blob = new Blob([arrayBuffer], { type: "audio/webm" });
-    openaiForm.append("file", blob, "recording.webm");
+    // iPhone（Safari）は mp4 形式で録音するので、形式に合った拡張子で渡す
+    const type = audioFile.type || "audio/webm";
+    const ext = /mp4|m4a|aac/.test(type) ? "m4a" : /ogg/.test(type) ? "ogg" : /wav/.test(type) ? "wav" : "webm";
+    const blob = new Blob([arrayBuffer], { type: type.split(";")[0] });
+    openaiForm.append("file", blob, `recording.${ext}`);
     openaiForm.append("model", "whisper-1");
     openaiForm.append("language", "ja");
     openaiForm.append(

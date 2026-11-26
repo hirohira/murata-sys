@@ -86,6 +86,26 @@ export interface ChatPhoto {
   id: string; // report_photos の id（案件写真から選んだときは章写真の id）
   url: string;
   path: string;
+  /** 写真ごとの解説（「話しながら撮る」で話した内容。あとから手で直せる） */
+  note?: string;
+}
+
+/** 写真ごとの解説をまとめた文（AIが使えないときの説明文に使う） */
+export function photoNotesText(photos: ChatPhoto[]): string {
+  return photos
+    .map((p) => (p.note || '').trim())
+    .filter(Boolean)
+    .map((t) => (/[。．.!！?？]$/.test(t) ? t : `${t}。`))
+    .join('');
+}
+
+/** 無音のときに音声認識が出しがちな定型文は、解説として使わない */
+export function cleanTranscript(text: string): string {
+  const t = (text || '').trim();
+  if (!t) return '';
+  if (/^(ご視聴ありがとうございました|チャンネル登録|おやすみなさい|字幕|ありがとうございました)[。．!！]*$/.test(t)) return '';
+  if (/(ご視聴ありがとうございました|チャンネル登録をお願いします|字幕は)/.test(t) && t.length < 30) return '';
+  return t;
 }
 
 interface Base {
@@ -236,7 +256,12 @@ export function sanitizeMessages(input: unknown): ChatMessage[] | null {
       const photos = (m.photos as Record<string, unknown>[])
         .filter((p) => p && typeof p.url === 'string' && typeof p.path === 'string')
         .slice(0, 30)
-        .map((p) => ({ id: String(p.id || '').slice(0, 64), url: String(p.url), path: String(p.path) }));
+        .map((p) => ({
+          id: String(p.id || '').slice(0, 64),
+          url: String(p.url),
+          path: String(p.path),
+          ...(typeof p.note === 'string' && p.note.trim() ? { note: p.note.trim().slice(0, 300) } : {}),
+        }));
       out.push({ ...base, kind: 'photos', photos });
     } else if (m.kind === 'text' && typeof m.text === 'string') {
       out.push({ ...base, kind: 'text', text: m.text.slice(0, 2000) });
